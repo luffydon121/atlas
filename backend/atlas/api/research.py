@@ -1,9 +1,10 @@
 import asyncio
 import json
-from datetime import datetime
+from datetime import date, datetime
+from typing import Annotated
 
 import pandas as pd
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -11,17 +12,19 @@ from sqlalchemy.orm import Session
 from atlas.api.deps import Symbol
 from atlas.config import get_settings
 from atlas.connectors import yahoo
+from atlas.core import exposure
 from atlas.core.envelope import Freshness, envelope, iso, utcnow
 from atlas.core.errors import SourceUnavailable
 from atlas.core.fetcher import get_fetcher
 from atlas.core.registry import REGISTRY
 from atlas.db import Alert, CacheEntry, Layout, Notification, Portfolio, SourceStatus, Transaction, get_db
 from atlas.services import alerts as alert_service
-from atlas.services import analytics, assistant, documents, quant
+from atlas.services import analytics, assistant, documents, eventstudy, quant
 from atlas.services import portfolio as ledger
 
 router = APIRouter(prefix="/api", tags=["research"])
 SYMBOL_RE = r"^[A-Za-z0-9.^=\-]{1,20}$"
+Symbol_Q = Annotated[str, Query(pattern=SYMBOL_RE)]
 
 
 async def _prices(symbol: str, range_: str = "10y", total_return: bool = False) -> pd.Series:
@@ -43,6 +46,7 @@ class BacktestIn(BaseModel):
     strategy: str = "sma_cross"
     params: dict[str, float] = {}
     cost_bps: float = Field(10, ge=0, le=500)
+    slippage_bps: float = Field(0, ge=0, le=500)
     walk_forward: bool = False
     total_return: bool = True
 
@@ -57,11 +61,93 @@ async def backtest(body: BacktestIn):
     px = await _prices(body.symbol, total_return=body.total_return)
     params = {k: (int(v) if float(v).is_integer() else v) for k, v in body.params.items()}
     try:
-        result = quant.backtest(px, body.strategy, params, body.cost_bps)
-        result["walk_forward"] = quant.walk_forward(px, body.strategy, body.cost_bps) if body.walk_forward else None
+        all_in = body.cost_bps + body.slippage_bps
+        result = quant.backtest(px, body.strategy, params, all_in)
+        result["walk_forward"] = quant.walk_forward(px, body.strategy, all_in) if body.walk_forward else None
     except (quant.ResearchError, TypeError) as exc:
         raise HTTPException(422, str(exc)) from exc
     return envelope(result, source="yahoo", freshness=Freshness.ESTIMATED, as_of=px.index[-1].strftime("%Y-%m-%d"), note=CAVEATS[body.total_return])
+
+
+class StudyIn(BaseModel):
+    symbol: str = Field(pattern=SYMBOL_RE)
+    dates: list[date] = Field(min_length=1, max_length=60)
+    before: int = Field(5, ge=0, le=60)
+    after: int = Field(10, ge=1, le=120)
+    benchmark: str | None = Field("SPY", pattern=SYMBOL_RE)
+
+
+@router.post("/quant/eventstudy")
+async def event_study(body: StudyIn):
+    prices = await yahoo.daily_history(body.symbol.upper())
+    bench = await yahoo.daily_history(body.benchmark.upper()) if body.benchmark else None
+    try:
+        result = eventstudy.study(prices, [d.isoformat() for d in body.dates], bench, body.before, body.after)
+    except eventstudy.StudyError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return envelope(result, source="yahoo", freshness=Freshness.HISTORICAL, note="Measures what happened around these dates. It does not show that the events caused the moves.")
+
+
+@router.get("/quant/analogues")
+def analogue_sets():
+    rows = exposure.analogues(list(exposure.RULES_BY_ID))
+    return envelope({"events": rows, "sets": {r.id: r.name for r in exposure.RULES}}, source="atlas", freshness=Freshness.REFERENCE)
+
+
+@router.get("/quant/rolling")
+async def rolling(a: Symbol_Q, b: Symbol_Q, window: int = Query(63, ge=10, le=504)):
+    left, right = await asyncio.gather(yahoo.daily_history(a.upper(), "2010-01-01"), yahoo.daily_history(b.upper(), "2010-01-01"))
+    return envelope(quant.rolling_correlation(left, right, window), source="yahoo", freshness=Freshness.HISTORICAL)
+
+
+@router.get("/quant/regimes/{symbol}")
+async def regimes(symbol: Symbol):
+    try:
+        return envelope(quant.vol_regimes(await yahoo.daily_history(symbol.upper())), source="yahoo", freshness=Freshness.HISTORICAL, note="Labels describe the past. Next-month means are in-sample, not forecasts.")
+    except quant.ResearchError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+class StressIn(BaseModel):
+    weights: dict[str, float] = Field(min_length=1, max_length=30)
+
+
+@router.post("/quant/stress")
+async def stress(body: StressIn):
+    total = sum(body.weights.values())
+    if total <= 0:
+        raise HTTPException(422, "Weights must add up to more than zero")
+    names = list(body.weights)
+    series = await asyncio.gather(*(yahoo.daily_history(s.upper()) for s in names))
+    return envelope(quant.stress_test({s: v for s, v in zip(names, series, strict=True)}, {s: w / total for s, w in body.weights.items()}), source="yahoo", freshness=Freshness.HISTORICAL, note="Replays real past windows. Future stress can differ. Assets without history are left out and shown.")
+
+
+class CompareIn(BaseModel):
+    symbol: str = Field(pattern=SYMBOL_RE)
+    cost_bps: float = Field(10, ge=0, le=500)
+
+
+@router.post("/quant/compare")
+async def compare(body: CompareIn):
+    rows = quant.compare_strategies(await _prices(body.symbol, total_return=True), body.cost_bps)
+    for row, ok in zip(rows, eventstudy.benjamini_hochberg([r["p_value"] for r in rows]), strict=True):
+        row["survives_correction"] = ok
+    return envelope(rows, source="yahoo", freshness=Freshness.ESTIMATED, note="Full-sample default settings, corrected for testing several strategies. Backtests do not guarantee future returns.")
+
+
+class MultiIn(BaseModel):
+    symbols: list[str] = Field(min_length=2, max_length=15)
+    strategy: str = "momentum"
+    cost_bps: float = Field(10, ge=0, le=500)
+
+
+@router.post("/quant/multi")
+async def multi(body: MultiIn):
+    series = await asyncio.gather(*(_prices(s, total_return=True) for s in body.symbols))
+    try:
+        return envelope(quant.multi_asset({s.upper(): v for s, v in zip(body.symbols, series, strict=True)}, body.strategy, body.cost_bps), source="yahoo", freshness=Freshness.ESTIMATED, note="Equal-weight book, rebalanced daily. Costs apply per asset.")
+    except quant.ResearchError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 class MonteCarloIn(BaseModel):
@@ -383,7 +469,10 @@ async def upload(file: UploadFile = File(...)):
     if len(raw) > limit:
         raise HTTPException(413, "File too large")
     try:
-        return await asyncio.to_thread(documents.ingest, file.filename or "upload.txt", raw)
+        result = await asyncio.to_thread(documents.ingest, file.filename or "upload.txt", raw)
+        if not result.get("duplicate"):
+            result["vectors"] = await documents.index_vectors(result["id"])
+        return result
     except documents.DocumentError as exc:
         raise HTTPException(422, str(exc)) from exc
 

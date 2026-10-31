@@ -5,11 +5,11 @@ import logging
 
 from atlas.api import market
 from atlas.config import get_settings
-from atlas.connectors import econ, news, world
+from atlas.connectors import econ, news, trade, world
 from atlas.core.errors import SourceUnavailable
 from atlas.core.fetcher import prune_cache
 from atlas.core.reference import WEATHER_REGIONS
-from atlas.services import alerts, briefing, impact, jobs, maintenance
+from atlas.services import alerts, briefing, impact, jobs, maintenance, reports, satellite_monitor
 
 log = logging.getLogger("atlas.scheduler")
 
@@ -56,6 +56,9 @@ def job_list() -> list[jobs.Job]:
         jobs.Job("economy", _refresh_econ, 6 * 3600, 300, 1, None, "Economic series"),
         jobs.Job("shipping", _shipping, 12 * 3600, 240, 1, "portwatch", "Chokepoint transits"),
         jobs.Job("weather", _weather, 86400, 300, 1, "openmeteo_archive", "Crop-region weather"),
+        jobs.Job("ports", trade.refresh_ports, 86400, 600, 0, "portwatch", "Port activity"),
+        jobs.Job("satellite", satellite_monitor.run_due, 3600, 900, 0, "earthsearch", "Satellite monitoring"),
+        jobs.Job("briefing", reports.generate, 86400, 120, 1, None, "Daily briefing"),
         jobs.Job("backup", maintenance.scheduled_backup, 86400, 120, 1, None, "Database backup"),
         jobs.Job("housekeeping", _housekeeping, 86400, 60, 0, None, "Expire caches and job history"),
     ]

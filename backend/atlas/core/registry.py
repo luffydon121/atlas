@@ -57,6 +57,8 @@ _SOURCES = [
     Source("oecd", "OECD Data Explorer", "economy", "CC BY 4.0", "Composite leading indicators", "24 h cache", "Rate limited. Latest values are revised.", "historical", 2.0, "https://data-explorer.oecd.org"),
     Source("eia", "US Energy Information Administration", "economy", "US Government public data", "Weekly US crude oil stocks", "12 h cache", "US inventories only, published weekly.", "historical", 1.0, "https://www.eia.gov"),
     Source("calendars", "Federal Reserve and RBA calendars", "economy", "Public web pages, used for dates only", "FOMC and RBA decision dates", "24 h cache", "Page layouts can change, which would empty the calendar.", "reference", 1.0, "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"),
+    Source("bis", "Bank for International Settlements", "economy", "BIS terms: free reuse with attribution", "Central bank policy rates", "24 h cache", "Daily series, published with a short lag.", "historical", 1.0, "https://data.bis.org"),
+    Source("usaspending", "USAspending.gov", "altdata", "US Government public data", "US federal contract awards", "24 h cache", "US federal awards only. Award size is not revenue.", "historical", 1.0, "https://www.usaspending.gov"),
     Source("fred", "FRED (St. Louis Fed)", "economy", "Free key; each series keeps its publisher's terms",
            "US and global macro series", "12 h cache", "Off until ATLAS_FRED_API_KEY is set.",
            "historical", 0.6, "https://fred.stlouisfed.org", requires="ATLAS_FRED_API_KEY"),
@@ -147,7 +149,7 @@ REDISTRIBUTION = {
 }
 _REFRESH = {"yahoo": 180, "binance": 30, "rss": 900, "gdelt": 1800, "openmeteo": 3600, "openmeteo_archive": 86400, "usgs": 600, "eonet": 1800, "nws": 600, "nhc": 1800, "opensky": 300, "portwatch": 43200, "coingecko": 180, "mempool": 300,
             "ethrpc": 300, "defillama": 3600, "sec": 86400, "bls": 43200, "treasury": 21600, "worldbank": 86400, "rba": 43200, "ecb": 43200, "eurostat": 43200, "abs": 43200, "oecd": 86400, "eia": 43200, "federalregister": 21600, "calendars": 86400,
-            "frankfurter": 21600, "wikimedia": 43200, "feargreed": 3600, "earthsearch": 3600, "cdse": 3600}
+            "frankfurter": 21600, "bis": 86400, "usaspending": 86400, "wikimedia": 43200, "feargreed": 3600, "earthsearch": 3600, "cdse": 3600}
 _TIERS = ["low", "medium", "high"]
 _BASE = {"official": 2, "local": 2, "community": 1, "mixed": 1, "automated": 0}
 

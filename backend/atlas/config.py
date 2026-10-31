@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     bls_api_key: str = ""
     ollama_url: str = "http://127.0.0.1:11434"
     ollama_model: str = ""
+    ollama_embed_model: str = ""
 
     scheduler_enabled: bool = True
     alert_interval_seconds: int = 300

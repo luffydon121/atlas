@@ -11,12 +11,15 @@ import re
 from dataclasses import dataclass, field
 
 import httpx
+from sqlalchemy import select
 
 from atlas.config import get_settings
-from atlas.connectors import crypto, econ, news, sec, world, yahoo
+from atlas.connectors import crypto, econ, holdings, news, sec, world, yahoo
+from atlas.core import exposure
 from atlas.core.errors import SourceUnavailable
 from atlas.core.reference import COMMODITIES, COMMODITY_TICKERS, LARGE_CAPS
-from atlas.services import analytics, documents
+from atlas.db import SatelliteMeasurement, session_scope
+from atlas.services import analytics, documents, impact
 
 log = logging.getLogger("atlas.assistant")
 
@@ -137,6 +140,66 @@ async def _earnings_ev(tickers: list[str]) -> Evidence:
     return Evidence("Earnings timing", "sec", None, facts, "https://www.sec.gov/edgar")
 
 
+STOP = {"what", "which", "could", "might", "does", "with", "that", "this", "from", "about", "show", "mean", "major", "global", "current", "changes", "change"}
+
+
+def _themes(q: str) -> list[exposure.Rule]:
+    words = {w for w in re.findall(r"[a-z]{4,}", q) if w not in STOP}
+    hits = []
+    for r in exposure.RULES:
+        text = " ".join([r.name, *r.industries, *(role for _s, role in r.commodities), *(role for _s, role in r.companies)]).lower()
+        if any(w.rstrip("s") in text for w in words):
+            hits.append(r)
+    return hits[:3]
+
+
+def _exposure_ev(rules: list[exposure.Rule]) -> list[Evidence]:
+    return [Evidence(f"Documented exposure: {r.name}", "exposure rule", None, [f"Mechanism: {r.mechanism}", f"Uncertainty: {r.uncertainty}", f"Possible exposure, not a forecast: {', '.join(s for s, _ in r.commodities + r.companies)}", f"Basis: {r.basis}"]) for r in rules]
+
+
+def _events_ev(rules: list[exposure.Rule] | None = None) -> Evidence | None:
+    ids = {r.id for r in rules or []}
+    rows = [e for e in impact.feed(14) if e["severity"] != "info" and (not ids or set(e["rules"]) & ids)][:6]
+    if not rows:
+        return None
+    return Evidence("Current events in the connected feeds", "impact engine", rows[0]["observed_at"], [f"[{e['verification']}] {e['title']} ({e['observed_at'][:10]}, {e['source']})" for e in rows], "/impact")
+
+
+def _satellite_ev() -> Evidence | None:
+    with session_scope() as db:
+        rows = db.scalars(select(SatelliteMeasurement).order_by(SatelliteMeasurement.acquired_at.desc()).limit(6)).all()
+        facts = [f"{r.aoi}: {r.index_name} mean {r.mean:.3f} from scene {r.scene_id}, {r.valid_fraction * 100:.0f}% clear, acquired {r.acquired_at[:10]}" for r in rows]
+    return Evidence("Stored satellite measurements", "earthsearch", None, facts) if facts else None
+
+
+async def _movers_ev() -> Evidence:
+    from atlas.api import market
+
+    rows, _missing = await market._universe()
+    ranked = sorted(rows, key=lambda r: abs(r["chg_1d"]), reverse=True)[:6]
+    return Evidence("Largest moves among tracked large caps", "yahoo", None, [f"{r['symbol']}: {r['chg_1d'] * 100:+.2f}% with volume {r['rel_volume'] or 0:.1f}x normal" for r in ranked] + ["These are price moves only. Causes are not established here."])
+
+
+async def _holdings_ev(tickers: list[str]) -> Evidence:
+    facts = []
+    for cik, name in list(holdings.FILERS.items())[:4]:
+        rows = holdings.filings((await sec.submissions(cik)).json(), 1)
+        if rows:
+            facts.append(f"{name}: latest 13F for {rows[0]['period']}, filed {rows[0]['filed']}")
+    facts.append(f"Position-level comparison for {', '.join(tickers) or 'these companies'} needs ATLAS_SEC_CONTACT, because SEC refuses holdings files without a declared contact.")
+    return Evidence("Institutional filings", "sec", None, facts)
+
+
+def _week_ev() -> Evidence:
+    facts = []
+    for s in econ.CATALOG:
+        if s.source != "fred":
+            rows = econ.history(s.id)
+            if len(rows) > 1 and rows[-1][1] != rows[-2][1]:
+                facts.append(f"{s.region} {s.name}: {rows[-1][1]:g} for {rows[-1][0]}, previous {rows[-2][1]:g}")
+    return Evidence("Latest changes in stored indicators", "econ", None, facts[:12] or ["No stored indicator changes yet."])
+
+
 def news_ev(terms: str) -> Evidence | None:
     rows = news.latest(limit=6, q=terms)
     if not rows:
@@ -174,6 +237,10 @@ async def retrieve(question: str) -> Retrieval:
         plan("Bitcoin network", _bitcoin_ev())
     if re.search(r"ethereum|\beth\b", q):
         plan("Ethereum price", _price_ev("ETH-USD", "Ethereum"))
+    if re.search(r"biggest|largest|market move", q):
+        plan("Market movers", _movers_ev())
+    if re.search(r"institution|13f|holding", q):
+        plan("Institutional filings", _holdings_ev(tickers))
     if "earning" in q:
         plan("Earnings dates", _earnings_ev(tickers or ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL"]))
 
@@ -201,7 +268,17 @@ async def retrieve(question: str) -> Retrieval:
     if terms and (n := news_ev(terms)):
         r.evidence.append(n)
 
-    for chunk in documents.search(question, limit=4):
+    themes = _themes(q)
+    r.evidence.extend(_exposure_ev(themes))
+    if re.search(r"event|affect|supply|disrupt|risk|exposed|impact|hurricane|storm|shipping", q) and (events := _events_ev(themes)):
+        r.tools.append("Impact Engine")
+        r.evidence.append(events)
+    if re.search(r"satellite|mine|mining", q) and (seen := _satellite_ev()):
+        r.tools.append("Satellite measurements")
+        r.evidence.append(seen)
+    if re.search(r"past week|this week|last week|what changed", q):
+        r.evidence.append(_week_ev())
+    for chunk in await documents.hybrid_search(question, limit=4):
         r.evidence.append(Evidence(f"Your document: {chunk['filename']} p.{chunk['page']}", "local document", chunk["uploaded_at"], [chunk["text"]], untrusted=True))
     return r
 
