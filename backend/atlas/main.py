@@ -48,3 +48,14 @@ async def source_unavailable(_request: Request, exc: SourceUnavailable) -> JSONR
 
 for module in (market, company, econ, world, research):
     app.include_router(module.router)
+
+
+@app.middleware("http")
+async def public_read_only(request: Request, call_next):
+    if get_settings().public_read_only:
+        if request.method not in {"GET", "HEAD", "OPTIONS"}:
+            return JSONResponse(status_code=403, content={"detail": "This public demo is read-only. Saving, uploads and interactive calculations are disabled."})
+        private_paths = ("/api/portfolios", "/api/documents", "/api/alerts", "/api/notifications", "/api/layouts", "/api/watchlists", "/api/ai")
+        if any(request.url.path == p or request.url.path.startswith(p + "/") for p in private_paths):
+            return JSONResponse(status_code=403, content={"detail": "Personal workspace features are unavailable in the public demo."})
+    return await call_next(request)

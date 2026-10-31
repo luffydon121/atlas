@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     )
 
     data_dir: Path = BACKEND_DIR.parent / "data"
+    public_read_only: bool = False
     host: str = "127.0.0.1"
     port: int = 8000
 

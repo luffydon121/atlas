@@ -1,4 +1,5 @@
 import "./globals.css";
+import { PublicDemo } from "@/components/PublicDemo";
 import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
 import { Providers } from "@/components/Providers";
@@ -13,7 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning>
       <head><script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} /></head>
       <body>
-        <Providers><Shell><Suspense>{children}</Suspense></Shell></Providers>
+        <Providers><Shell><Suspense><PublicDemo>{children}</PublicDemo></Suspense></Shell></Providers>
       </body>
     </html>
   );
