@@ -101,3 +101,29 @@ async def test_binary_body_round_trips():
 
     respx.get(URL).respond(200, content=b"\xd0\xcf\x11")
     assert base64.b64decode((await make().get("eia", URL, binary=True)).body) == b"\xd0\xcf\x11"
+
+
+@respx.mock
+async def test_busy_database_does_not_fail_a_fetch(monkeypatch):
+    from sqlalchemy.exc import OperationalError
+
+    from atlas.core import fetcher as module
+
+    respx.get(URL).respond(200, text="ok")
+
+    class Busy:
+        def __enter__(self):
+            raise OperationalError("write", {}, Exception("database is locked"))
+
+        def __exit__(self, *_):
+            return False
+
+    real = module.session_scope
+    calls = []
+
+    def flaky():
+        calls.append(1)
+        return real() if len(calls) == 1 else Busy()
+
+    monkeypatch.setattr(module, "session_scope", flaky)
+    assert (await make().get("usgs", URL)).body == "ok"

@@ -141,7 +141,7 @@ async def screener():
 
 
 @router.get("/watchlists")
-def list_watchlists(db: Session = Depends(get_db)):
+def list_watchlists(db: Session = Depends(get_db, scope="function")):
     return [{"id": w.id, "name": w.name, "symbols": [i.symbol for i in w.items]} for w in db.scalars(select(Watchlist).order_by(Watchlist.id))]
 
 
@@ -154,7 +154,7 @@ class ItemIn(BaseModel):
 
 
 @router.post("/watchlists", status_code=201)
-def create_watchlist(body: WatchlistIn, db: Session = Depends(get_db)):
+def create_watchlist(body: WatchlistIn, db: Session = Depends(get_db, scope="function")):
     if db.scalar(select(Watchlist).where(Watchlist.name == body.name)):
         raise HTTPException(409, "A watchlist with that name exists")
     w = Watchlist(name=body.name)
@@ -164,7 +164,7 @@ def create_watchlist(body: WatchlistIn, db: Session = Depends(get_db)):
 
 
 @router.delete("/watchlists/{wid}", status_code=204)
-def delete_watchlist(wid: int, db: Session = Depends(get_db)):
+def delete_watchlist(wid: int, db: Session = Depends(get_db, scope="function")):
     w = db.get(Watchlist, wid)
     if not w:
         raise HTTPException(404, "Not found")
@@ -172,7 +172,7 @@ def delete_watchlist(wid: int, db: Session = Depends(get_db)):
 
 
 @router.post("/watchlists/{wid}/items", status_code=201)
-def add_item(wid: int, body: ItemIn, db: Session = Depends(get_db)):
+def add_item(wid: int, body: ItemIn, db: Session = Depends(get_db, scope="function")):
     w = db.get(Watchlist, wid)
     if not w:
         raise HTTPException(404, "Not found")
@@ -187,7 +187,7 @@ class OrderIn(BaseModel):
 
 
 @router.put("/watchlists/{wid}/order")
-def reorder(wid: int, body: OrderIn, db: Session = Depends(get_db)):
+def reorder(wid: int, body: OrderIn, db: Session = Depends(get_db, scope="function")):
     w = db.get(Watchlist, wid)
     if not w:
         raise HTTPException(404, "Not found")
@@ -198,7 +198,7 @@ def reorder(wid: int, body: OrderIn, db: Session = Depends(get_db)):
 
 
 @router.delete("/watchlists/{wid}/items/{symbol}", status_code=204)
-def remove_item(wid: int, symbol: Symbol, db: Session = Depends(get_db)):
+def remove_item(wid: int, symbol: Symbol, db: Session = Depends(get_db, scope="function")):
     item = db.scalar(select(WatchlistItem).where(WatchlistItem.watchlist_id == wid, WatchlistItem.symbol == symbol.upper()))
     if item:
         db.delete(item)

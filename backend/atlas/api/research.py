@@ -235,12 +235,12 @@ def _get_portfolio(db: Session, pid: int) -> Portfolio:
 
 
 @router.get("/portfolios")
-def portfolios(db: Session = Depends(get_db)):
+def portfolios(db: Session = Depends(get_db, scope="function")):
     return [{"id": p.id, "name": p.name, "kind": p.kind, "base_currency": p.base_currency, "starting_cash": p.starting_cash} for p in db.scalars(select(Portfolio).order_by(Portfolio.id))]
 
 
 @router.post("/portfolios", status_code=201)
-def create_portfolio(body: PortfolioIn, db: Session = Depends(get_db)):
+def create_portfolio(body: PortfolioIn, db: Session = Depends(get_db, scope="function")):
     if db.scalar(select(Portfolio).where(Portfolio.name == body.name)):
         raise HTTPException(409, "A portfolio with that name exists")
     p = Portfolio(**body.model_dump())
@@ -250,7 +250,7 @@ def create_portfolio(body: PortfolioIn, db: Session = Depends(get_db)):
 
 
 @router.delete("/portfolios/{pid}", status_code=204)
-def delete_portfolio(pid: int, db: Session = Depends(get_db)):
+def delete_portfolio(pid: int, db: Session = Depends(get_db, scope="function")):
     db.delete(_get_portfolio(db, pid))
 
 
@@ -262,7 +262,7 @@ def _check_ledger(existing: list, new: list) -> None:
 
 
 @router.post("/portfolios/{pid}/transactions", status_code=201)
-def add_transaction(pid: int, body: TransactionIn, db: Session = Depends(get_db)):
+def add_transaction(pid: int, body: TransactionIn, db: Session = Depends(get_db, scope="function")):
     p = _get_portfolio(db, pid)
     tx = Transaction(portfolio_id=pid, **{**body.model_dump(), "symbol": body.symbol.upper(), "ts": body.ts.replace(tzinfo=None)})
     _check_ledger(p.transactions, [tx])
@@ -272,7 +272,7 @@ def add_transaction(pid: int, body: TransactionIn, db: Session = Depends(get_db)
 
 
 @router.delete("/portfolios/{pid}/transactions/{tid}", status_code=204)
-def delete_transaction(pid: int, tid: int, db: Session = Depends(get_db)):
+def delete_transaction(pid: int, tid: int, db: Session = Depends(get_db, scope="function")):
     tx = db.get(Transaction, tid)
     if not tx or tx.portfolio_id != pid:
         raise HTTPException(404, "Not found")
@@ -282,7 +282,7 @@ def delete_transaction(pid: int, tid: int, db: Session = Depends(get_db)):
 
 
 @router.post("/portfolios/{pid}/import", status_code=201)
-async def import_csv(pid: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def import_csv(pid: int, file: UploadFile = File(...), db: Session = Depends(get_db, scope="function")):
     p = _get_portfolio(db, pid)
     raw = await file.read(5 * 1024 * 1024 + 1)
     if len(raw) > 5 * 1024 * 1024:
@@ -298,7 +298,7 @@ async def import_csv(pid: int, file: UploadFile = File(...), db: Session = Depen
 
 
 @router.post("/portfolios/{pid}/paper-order", status_code=201)
-async def paper_order(pid: int, body: PaperOrder, db: Session = Depends(get_db)):
+async def paper_order(pid: int, body: PaperOrder, db: Session = Depends(get_db, scope="function")):
     p = _get_portfolio(db, pid)
     if p.kind != "paper":
         raise HTTPException(422, "Paper orders need a paper portfolio. ATLAS never routes real orders.")
@@ -316,7 +316,7 @@ async def paper_order(pid: int, body: PaperOrder, db: Session = Depends(get_db))
 
 
 @router.get("/portfolios/{pid}")
-async def portfolio_detail(pid: int, benchmark: str = "^GSPC", db: Session = Depends(get_db)):
+async def portfolio_detail(pid: int, benchmark: str = "^GSPC", db: Session = Depends(get_db, scope="function")):
     p = _get_portfolio(db, pid)
     txs = list(p.transactions)
     book = ledger.compute_positions(txs)
@@ -397,12 +397,12 @@ def _alert(a: Alert) -> dict:
 
 
 @router.get("/alerts")
-def list_alerts(db: Session = Depends(get_db)):
+def list_alerts(db: Session = Depends(get_db, scope="function")):
     return {"alerts": [_alert(a) for a in db.scalars(select(Alert).order_by(Alert.id))], "kinds": alert_service.KINDS}
 
 
 @router.post("/alerts", status_code=201)
-def create_alert(body: AlertIn, db: Session = Depends(get_db)):
+def create_alert(body: AlertIn, db: Session = Depends(get_db, scope="function")):
     a = Alert(**body.model_dump())
     db.add(a)
     db.flush()
@@ -410,7 +410,7 @@ def create_alert(body: AlertIn, db: Session = Depends(get_db)):
 
 
 @router.delete("/alerts/{aid}", status_code=204)
-def delete_alert(aid: int, db: Session = Depends(get_db)):
+def delete_alert(aid: int, db: Session = Depends(get_db, scope="function")):
     a = db.get(Alert, aid)
     if not a:
         raise HTTPException(404, "Not found")
@@ -423,14 +423,14 @@ async def evaluate():
 
 
 @router.get("/notifications")
-def notifications(limit: int = 50, db: Session = Depends(get_db)):
+def notifications(limit: int = 50, db: Session = Depends(get_db, scope="function")):
     rows = db.scalars(select(Notification).order_by(Notification.created_at.desc()).limit(min(limit, 200))).all()
     unread = db.scalar(select(func.count()).select_from(Notification).where(Notification.read.is_(False)))
     return {"unread": unread, "items": [{"id": n.id, "title": n.title, "body": n.body, "severity": n.severity, "created_at": iso(n.created_at), "read": n.read} for n in rows]}
 
 
 @router.post("/notifications/read")
-def mark_read(db: Session = Depends(get_db)):
+def mark_read(db: Session = Depends(get_db, scope="function")):
     for n in db.scalars(select(Notification).where(Notification.read.is_(False))):
         n.read = True
     return {"ok": True}
@@ -486,13 +486,13 @@ def remove_document(doc_id: int):
 # -- Workspace and system ----------------------------------------------------------------------------------
 
 @router.get("/layouts/{name}")
-def get_layout(name: str, db: Session = Depends(get_db)):
+def get_layout(name: str, db: Session = Depends(get_db, scope="function")):
     row = db.get(Layout, name[:80])
     return {"name": name, "spec": json.loads(row.spec) if row else None}
 
 
 @router.put("/layouts/{name}")
-def put_layout(name: str, spec: dict, db: Session = Depends(get_db)):
+def put_layout(name: str, spec: dict, db: Session = Depends(get_db, scope="function")):
     raw = json.dumps(spec)
     if len(raw) > 100_000:
         raise HTTPException(413, "Layout too large")
@@ -501,12 +501,12 @@ def put_layout(name: str, spec: dict, db: Session = Depends(get_db)):
 
 
 @router.get("/layouts")
-def list_layouts(db: Session = Depends(get_db)):
+def list_layouts(db: Session = Depends(get_db, scope="function")):
     return list(db.scalars(select(Layout.name).order_by(Layout.name)))
 
 
 @router.get("/sources")
-def sources(db: Session = Depends(get_db)):
+def sources(db: Session = Depends(get_db, scope="function")):
     status = {s.source_id: s for s in db.scalars(select(SourceStatus))}
     settings = get_settings()
     configured = {"fred": bool(settings.fred_api_key)}
@@ -530,5 +530,5 @@ async def settings_view():
 
 
 @router.get("/health")
-def health(db: Session = Depends(get_db)):
+def health(db: Session = Depends(get_db, scope="function")):
     return {"status": "ok", "cache_entries": db.scalar(select(func.count()).select_from(CacheEntry))}

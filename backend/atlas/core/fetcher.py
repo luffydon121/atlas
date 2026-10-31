@@ -15,6 +15,7 @@ from typing import Any
 
 import httpx
 from sqlalchemy import delete
+from sqlalchemy.exc import OperationalError
 
 from atlas.core.envelope import utcnow
 from atlas.core.errors import SourceUnavailable
@@ -57,19 +58,34 @@ class _Pacer:
 
 
 def _record(source_id: str, ok: bool, error: str | None = None) -> None:
+    """Health records are best effort. A busy database must never fail a data request."""
     now = utcnow()
-    with session_scope() as db:
-        row = db.get(SourceStatus, source_id)
-        if row is None:
-            row = SourceStatus(source_id=source_id, success_count=0, failure_count=0)
-            db.add(row)
-        row.last_attempt = now
-        if ok:
-            row.last_success, row.last_error = now, None
-            row.success_count += 1
-        else:
-            row.last_error = (error or "unknown error")[:500]
-            row.failure_count += 1
+    try:
+        with session_scope() as db:
+            row = db.get(SourceStatus, source_id)
+            if row is None:
+                row = SourceStatus(source_id=source_id, success_count=0, failure_count=0)
+                db.add(row)
+            row.last_attempt = now
+            if ok:
+                row.last_success, row.last_error = now, None
+                row.success_count += 1
+            else:
+                row.last_error = (error or "unknown error")[:500]
+                row.failure_count += 1
+    except OperationalError as exc:
+        log.warning("Could not record health for %s: %s", source_id, exc)
+
+
+def _store(key: str, source_id: str, body: str, ttl: int) -> datetime:
+    """A busy database means the next reader refetches, which is better than failing this one."""
+    now = utcnow()
+    try:
+        with session_scope() as db:
+            db.merge(CacheEntry(key=key, source_id=source_id, body=body, fetched_at=now, expires_at=now + timedelta(seconds=ttl)))
+    except OperationalError as exc:
+        log.warning("Could not cache %s: %s", source_id, exc)
+    return now
 
 
 def _retry_after(response: httpx.Response) -> float | None:
@@ -139,10 +155,7 @@ class Fetcher:
                     log.warning("%s failed, serving stale cache: %s", source_id, exc.reason)
                     return Fetched(cached[0], cached[1], stale=True, cached=True)
                 raise
-            now = utcnow()
-            with session_scope() as db:
-                db.merge(CacheEntry(key=key, source_id=source_id, body=body, fetched_at=now,
-                                    expires_at=now + timedelta(seconds=ttl)))
+            now = _store(key, source_id, body, ttl)
             _record(source_id, True)
             return Fetched(body, now)
 
@@ -152,9 +165,7 @@ class Fetcher:
         except SourceUnavailable as exc:
             _record(source_id, False, exc.reason)
         else:
-            now = utcnow()
-            with session_scope() as db:
-                db.merge(CacheEntry(key=key, source_id=source_id, body=body, fetched_at=now, expires_at=now + timedelta(seconds=ttl)))
+            _store(key, source_id, body, ttl)
             _record(source_id, True)
         finally:
             self._refreshing.pop(key, None)

@@ -109,12 +109,12 @@ class AreaIn(BaseModel):
 
 
 @router.get("/satellite/areas")
-def areas(db: Session = Depends(get_db)):
+def areas(db: Session = Depends(get_db, scope="function")):
     return {"areas": [satellite_monitor.to_dict(a) for a in db.scalars(select(MonitoringArea).order_by(MonitoringArea.id))], "trackers": {k: {"label": v[0], "index": v[1]} for k, v in satellite_monitor.TRACKERS.items()}, "indices": {k: v["name"] for k, v in satellite.INDICES.items()}}
 
 
 @router.post("/satellite/areas", status_code=201)
-def create_area(body: AreaIn, db: Session = Depends(get_db)):
+def create_area(body: AreaIn, db: Session = Depends(get_db, scope="function")):
     if body.tracker not in satellite_monitor.TRACKERS:
         raise HTTPException(422, "Unknown tracker")
     try:
@@ -128,7 +128,7 @@ def create_area(body: AreaIn, db: Session = Depends(get_db)):
 
 
 @router.delete("/satellite/areas/{area_id}", status_code=204)
-def delete_area(area_id: int, db: Session = Depends(get_db)):
+def delete_area(area_id: int, db: Session = Depends(get_db, scope="function")):
     area = db.get(MonitoringArea, area_id)
     if not area:
         raise HTTPException(404, "Not found")
@@ -136,7 +136,7 @@ def delete_area(area_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/satellite/areas/{area_id}/check")
-async def check_area(area_id: int, db: Session = Depends(get_db)):
+async def check_area(area_id: int, db: Session = Depends(get_db, scope="function")):
     if not db.get(MonitoringArea, area_id):
         raise HTTPException(404, "Not found")
     return await satellite_monitor.check_area(area_id)
@@ -148,7 +148,7 @@ def area_history(area_id: int):
 
 
 @router.get("/satellite/areas/{area_id}/report", response_class=PlainTextResponse)
-def area_report(area_id: int, db: Session = Depends(get_db)):
+def area_report(area_id: int, db: Session = Depends(get_db, scope="function")):
     if not db.get(MonitoringArea, area_id):
         raise HTTPException(404, "Not found")
     return PlainTextResponse(satellite_monitor.report(area_id), media_type="text/markdown")

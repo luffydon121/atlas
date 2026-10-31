@@ -202,3 +202,23 @@ def test_init_db_is_safe_to_repeat(tmp_path):
     url = f"sqlite:///{tmp_path / 'x.db'}"
     db.init_db(url)
     db.init_db(url)
+
+
+async def test_saved_data_is_committed_before_the_response_starts():
+    """A commit that waits for the response can deadlock with writes on the event loop."""
+    from atlas.db import Watchlist
+
+    seen = {}
+
+    async def receive():
+        return {"type": "http.request", "body": b'{"name": "Race"}', "more_body": False}
+
+    async def send(message):
+        if message["type"] == "http.response.start":
+            with session_scope() as s:
+                seen["visible"] = s.scalar(select(Watchlist).where(Watchlist.name == "Race")) is not None
+
+    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST", "scheme": "http", "path": "/api/watchlists", "raw_path": b"/api/watchlists", "query_string": b"",
+             "headers": [(b"host", b"localhost"), (b"content-type", b"application/json"), (b"content-length", b"16")], "client": ("127.0.0.1", 1), "server": ("localhost", 80), "root_path": ""}
+    await app(scope, receive, send)
+    assert seen["visible"]

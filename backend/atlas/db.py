@@ -258,12 +258,14 @@ class DocVector(Base):
     vector: Mapped[bytes] = mapped_column(LargeBinary)
 
 
+# Writes can run on the event loop, so a long wait here would freeze every request.
+BUSY_SECONDS = 5
 _engine = None
 _session_factory = None
 
 
 def _build_engine(url: str):
-    engine = create_engine(url, connect_args={"check_same_thread": False, "timeout": 30})
+    engine = create_engine(url, connect_args={"check_same_thread": False, "timeout": BUSY_SECONDS})
 
     @event.listens_for(engine, "connect")
     def _pragmas(conn, _record):
@@ -307,5 +309,6 @@ def session_scope() -> Iterator[Session]:
 
 
 def get_db() -> Iterator[Session]:
+    """Use with scope="function": a commit that waits for the response can deadlock the event loop."""
     with session_scope() as db:
         yield db
