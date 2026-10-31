@@ -70,6 +70,14 @@ PORTS = [
     ("Yokohama", 35.45, 139.67),
 ]
 
+# Port identifiers from the PortWatch ports database. Name lookups time out on the daily table.
+PORT_DASHBOARD = [
+    {"portid": "port1188", "portname": "Shanghai", "country": "China"}, {"portid": "port1201", "portname": "Singapore", "country": "Singapore"}, {"portid": "port824", "portname": "Ningbo", "country": "China"},
+    {"portid": "port1065", "portname": "Busan", "country": "South Korea"}, {"portid": "port744", "portname": "Jebel Ali", "country": "United Arab Emirates"}, {"portid": "port1114", "portname": "Rotterdam", "country": "Netherlands"},
+    {"portid": "port57", "portname": "Antwerp", "country": "Belgium"}, {"portid": "port446", "portname": "Hamburg", "country": "Germany"}, {"portid": "port664", "portname": "Los Angeles-Long Beach", "country": "United States"},
+    {"portid": "port1160", "portname": "Santos", "country": "Brazil"}, {"portid": "port955", "portname": "Port Hedland", "country": "Australia"}, {"portid": "port729", "portname": "Melbourne", "country": "Australia"},
+]
+
 # Illustrative great-circle-style waypoints, not actual vessel tracks.
 TRADE_ROUTES = [
     {"name": "Asia - Europe via Suez",
@@ -102,6 +110,10 @@ AIRPORTS = [
 ENERGY_SITES = [
     {"name": "Ras Tanura (terminal)", "lat": 26.64, "lon": 50.16, "kind": "oil"},
     {"name": "Cushing, Oklahoma (storage hub)", "lat": 35.98, "lon": -96.76, "kind": "oil"},
+    {"name": "Port Arthur (refining)", "lat": 29.88, "lon": -93.94, "kind": "oil"},
+    {"name": "Baytown (refining)", "lat": 29.75, "lon": -95.0, "kind": "oil"},
+    {"name": "Garyville (refining)", "lat": 30.06, "lon": -90.6, "kind": "oil"},
+    {"name": "Louisiana Offshore Oil Port", "lat": 28.88, "lon": -90.03, "kind": "oil"},
     {"name": "Rotterdam (refining hub)", "lat": 51.9, "lon": 4.2, "kind": "oil"},
     {"name": "Ras Laffan (LNG)", "lat": 25.9, "lon": 51.55, "kind": "lng"},
     {"name": "Sabine Pass (LNG)", "lat": 29.74, "lon": -93.87, "kind": "lng"},
@@ -156,6 +168,12 @@ WEATHER_REGIONS = {
                  ("Cordoba, Argentina", -32.5, -63.0, 0.15)],
     "natural_gas": [("Chicago, USA", 41.9, -87.6, 0.35), ("New York, USA", 40.7, -74.0, 0.35),
                     ("Berlin, Germany", 52.5, 13.4, 0.3)],
+}
+# Main growing months for annual crops, from USDA crop calendars. Perennials and gas demand have none.
+GROWING_MONTHS = {
+    ("wheat", "Kansas, USA"): range(3, 7), ("wheat", "Punjab, India"): (11, 12, 1, 2, 3, 4), ("wheat", "Rostov, Russia"): range(4, 8), ("wheat", "Wheatbelt, WA"): range(5, 12),
+    ("corn", "Iowa, USA"): range(5, 11), ("corn", "Illinois, USA"): range(4, 11), ("corn", "Heilongjiang, China"): range(5, 10),
+    ("soybeans", "Mato Grosso, Brazil"): (10, 11, 12, 1, 2, 3), ("soybeans", "Iowa, USA"): range(5, 11), ("soybeans", "Cordoba, Argentina"): (11, 12, 1, 2, 3, 4),
 }
 COMMODITY_TICKERS = {"coffee": "KC=F", "cocoa": "CC=F", "wheat": "ZW=F", "corn": "ZC=F",
                      "soybeans": "ZS=F", "natural_gas": "NG=F"}

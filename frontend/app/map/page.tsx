@@ -3,8 +3,9 @@
 import * as maplibregl from "maplibre-gl";
 import type { FeatureCollection } from "geojson";
 import type { GeoJSONSource, Map as LibreMap } from "maplibre-gl";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { get, type Envelope, useEnvelope } from "@/lib/api";
+import { get, send, type Envelope, useApi, useEnvelope } from "@/lib/api";
 import { daysAgo } from "@/lib/format";
 import { useTheme } from "@/lib/theme";
 
@@ -17,13 +18,18 @@ maplibregl.setWorkerUrl("/maplibre-gl-worker.mjs");
 const STYLES = { dark: "https://tiles.openfreemap.org/styles/dark", light: "https://tiles.openfreemap.org/styles/positron" };
 const COLORS: Record<string, string> = {
   hazards_quakes: "#e66767", hazards_events: "#d95926", hazards_storms: "#d55181", agriculture: "#199e70", geopolitics: "#c98500", chokepoints: "#3987e5", ports: "#a4b3c2", routes: "#3987e5",
-  aircraft: "#9085e9", airports: "#a4b3c2", energy: "#c98500", industrial: "#75869a", satellite_aois: "#38c6bd", economy: "#3987e5",
+  impact: "#e66767", zones: "#c98500", monitoring: "#38c6bd", aircraft: "#9085e9", airports: "#a4b3c2", energy: "#c98500", industrial: "#75869a", satellite_aois: "#38c6bd", economy: "#3987e5",
 };
 const RASTERS = [
   { id: "gibs_truecolor", label: "MODIS true colour", url: "MODIS_Terra_CorrectedReflectance_TrueColor/default/{date}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg" },
   { id: "gibs_fires", label: "VIIRS thermal anomalies", url: "VIIRS_SNPP_Thermal_Anomalies_375m_All/default/{date}/GoogleMapsCompatible_Level7/{z}/{y}/{x}.png" },
 ];
 const GIBS = "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/";
+
+const CLUSTERED = new Set(["hazards_quakes", "hazards_events", "impact", "geopolitics", "aircraft"]);
+const AREAS = new Set(["zones", "monitoring"]);
+const parts = (id: string) => [id, `${id}-clusters`, `${id}-count`, `${id}-line`];
+type View = { center: [number, number]; zoom: number; layers: string[] };
 
 function popup(props: Record<string, unknown>): HTMLElement {
   // Feed text is untrusted, so it is only ever set as text content.
@@ -37,6 +43,14 @@ function popup(props: Record<string, unknown>): HTMLElement {
     line.style.color = "var(--ink-2)";
     line.textContent = `${k.replace(/_/g, " ")}: ${v}`;
     box.append(line);
+  }
+  if (props.severity) {
+    const open = document.createElement("a");
+    open.href = `/impact?event=${props.id}`;
+    open.textContent = "Open in Impact Engine";
+    open.style.textDecoration = "underline";
+    open.style.display = "block";
+    box.append(open);
   }
   const url = String(props.url ?? "");
   if (url.startsWith("https://") || url.startsWith("http://")) {
@@ -62,6 +76,9 @@ export default function WorldMap() {
   const [offset, setOffset] = useState(2);
   const [playing, setPlaying] = useState(false);
   const [tier, setTier] = useState("all");
+  const [sheet, setSheet] = useState(false);
+  const [viewName, setViewName] = useState("");
+  const focus = useSearchParams().get("event");
   const layers = useEnvelope<Layer[]>("/api/map/layers");
   const date = daysAgo(offset);
 
@@ -85,12 +102,25 @@ export default function WorldMap() {
       const src = m.getSource(id) as GeoJSONSource | undefined;
       if (src) src.setData(r.data);
       else {
-        m.addSource(id, { type: "geojson", data: r.data });
+        const clustered = CLUSTERED.has(id);
+        m.addSource(id, { type: "geojson", data: r.data, cluster: clustered, clusterRadius: 44, clusterMaxZoom: 6 });
         const color = COLORS[id] ?? "#3987e5";
-        if (id === "routes") m.addLayer({ id, type: "line", source: id, paint: { "line-color": color, "line-width": 1.2, "line-opacity": 0.55, "line-dasharray": [3, 3] } });
+        if (clustered) {
+          m.addLayer({ id: `${id}-clusters`, type: "circle", source: id, filter: ["has", "point_count"], paint: { "circle-color": color, "circle-opacity": 0.75, "circle-radius": ["step", ["get", "point_count"], 12, 10, 16, 40, 20], "circle-stroke-color": theme === "dark" ? "#000000" : "#ffffff", "circle-stroke-width": 1 } });
+          m.addLayer({ id: `${id}-count`, type: "symbol", source: id, filter: ["has", "point_count"], layout: { "text-field": ["get", "point_count_abbreviated"], "text-font": ["Noto Sans Regular"], "text-size": 11 }, paint: { "text-color": "#ffffff" } });
+          m.on("click", `${id}-clusters`, (e) => m.easeTo({ center: e.lngLat, zoom: m.getZoom() + 2 }));
+        }
+        if (AREAS.has(id)) {
+          m.addLayer({ id, type: "fill", source: id, paint: { "fill-color": color, "fill-opacity": 0.12 } });
+          m.addLayer({ id: `${id}-line`, type: "line", source: id, paint: { "line-color": color, "line-width": 1.4 } });
+          m.on("click", id, (e) => {
+            const f = e.features?.[0];
+            if (f) new maplibregl.Popup({ closeButton: false }).setLngLat(e.lngLat).setDOMContent(popup(f.properties as Record<string, unknown>)).addTo(m);
+          });
+        } else if (id === "routes") m.addLayer({ id, type: "line", source: id, paint: { "line-color": color, "line-width": 1.2, "line-opacity": 0.55, "line-dasharray": [3, 3] } });
         else {
           const radius: maplibregl.ExpressionSpecification | number = id === "hazards_quakes" ? ["interpolate", ["linear"], ["get", "mag"], 4.5, 3, 8, 14] : id === "aircraft" ? 2.5 : 5;
-          m.addLayer({ id, type: "circle", source: id, paint: { "circle-radius": radius, "circle-color": id === "agriculture" ? ["match", ["get", "level"], "elevated", "#e66767", "watch", "#c98500", "#199e70"] : color, "circle-opacity": 0.8, "circle-stroke-color": theme === "dark" ? "#000000" : "#ffffff", "circle-stroke-width": 1 } });
+          m.addLayer({ id, type: "circle", source: id, ...(clustered ? { filter: ["!", ["has", "point_count"]] } : {}), paint: { "circle-radius": radius, "circle-color": id === "agriculture" ? ["match", ["get", "level"], "elevated", "#e66767", "watch", "#c98500", "#199e70"] : id === "impact" ? ["match", ["get", "severity"], "severe", "#ff453a", "elevated", "#ff9f0a", "watch", "#ffb340", "#86868b"] : color, "circle-opacity": 0.8, "circle-stroke-color": theme === "dark" ? "#000000" : "#ffffff", "circle-stroke-width": 1 } });
           m.on("click", id, (e) => {
             const f = e.features?.[0];
             if (f) new maplibregl.Popup({ closeButton: false }).setLngLat(e.lngLat).setDOMContent(popup(f.properties as Record<string, unknown>)).addTo(m);
@@ -109,7 +139,7 @@ export default function WorldMap() {
     if (!ready || !m) return;
     for (const l of layers.data?.data ?? []) {
       const visible = on.includes(l.id);
-      if (m.getLayer(l.id)) m.setLayoutProperty(l.id, "visibility", visible ? "visible" : "none");
+      if (m.getLayer(l.id)) parts(l.id).forEach((p) => { if (m.getLayer(p)) m.setLayoutProperty(p, "visibility", visible ? "visible" : "none"); });
       else if (visible) load(l.id);
     }
   }, [on, ready, layers.data, load]);
@@ -147,13 +177,38 @@ export default function WorldMap() {
     return () => clearInterval(t);
   }, [playing]);
 
+  useEffect(() => {
+    if (!ready || !focus) return;
+    get(`/api/impact/events/${focus}`).then((r) => {
+      setOn((v) => (v.includes("impact") ? v : [...v, "impact"]));
+      if (r.data.lat !== null) map.current?.flyTo({ center: [r.data.lon, r.data.lat], zoom: 5 });
+    }).catch(() => {});
+  }, [ready, focus]);
+
+  const views = useApi<{ spec: Record<string, View> | null }>("/api/layouts/map-views");
+  const saveView = () => {
+    const m = map.current;
+    const name = viewName.trim();
+    if (!m || !name) return;
+    const c = m.getCenter();
+    const spec = { ...(views.data?.spec ?? {}), [name]: { center: [c.lng, c.lat] as [number, number], zoom: m.getZoom(), layers: on } };
+    send("/api/layouts/map-views", "PUT", spec).then(() => { setViewName(""); views.mutate(); }).catch(() => {});
+  };
+  const openView = (name: string) => {
+    const v = views.data?.spec?.[name];
+    if (!v) return;
+    setOn(v.layers);
+    map.current?.flyTo({ center: v.center, zoom: v.zoom });
+  };
+
   const toggle = (id: string) => setOn((v) => (v.includes(id) ? v.filter((x) => x !== id) : [...v, id]));
   const groups = [...new Set(layers.data?.data.map((l) => l.group))];
 
   return (
     <div className="map-wrap">
       <div ref={host} style={{ position: "absolute", inset: 0 }} data-testid="world-map" data-ready={ready} />
-      <aside className="map-side" aria-label="Map layers">
+      <button className="btn on layers-btn" onClick={() => setSheet(!sheet)}>{sheet ? "Hide layers" : "Layers"}</button>
+      <aside className={`map-side ${sheet ? "open" : ""}`} aria-label="Map layers">
         <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", marginBottom: 10 }}>World map</div>
         {groups.map((g) => (
           <div key={g} style={{ marginBottom: 8 }}>
@@ -175,6 +230,11 @@ export default function WorldMap() {
           </div>
         ))}
         {on.includes("geopolitics") && <label className="row muted" style={{ marginBottom: 8 }}>Event tier<select className="input" value={tier} onChange={(e) => setTier(e.target.value)}><option value="all">All</option><option value="official">Official</option><option value="automated">Automated</option></select></label>}
+        {!views.error && <><div className="muted" style={{ fontSize: 12, fontWeight: 600, margin: "4px 0 2px" }}>Saved views</div>
+          <div className="row" style={{ marginBottom: 8 }}>
+            {Object.keys(views.data?.spec ?? {}).map((n) => <button key={n} className="btn" onClick={() => openView(n)}>{n}</button>)}
+            <input className="input" style={{ flex: 1, minWidth: 90 }} aria-label="View name" placeholder="Name" value={viewName} onChange={(e) => setViewName(e.target.value)} /><button className="btn" disabled={!viewName.trim()} onClick={saveView}>Save</button>
+          </div></>}
         <div className="muted" style={{ fontSize: 12, fontWeight: 600, margin: "4px 0 2px" }}>Satellite imagery</div>
         {RASTERS.map((r) => <label key={r.id} className="row" style={{ cursor: "pointer", padding: "2px 0" }}><input type="checkbox" className="switch" checked={raster.includes(r.id)} onChange={() => setRaster((v) => (v.includes(r.id) ? v.filter((x) => x !== r.id) : [...v, r.id]))} />{r.label}</label>)}
         <div className="row" style={{ marginTop: 6 }}><span className="mono">{date}</span><button className="btn" onClick={() => setPlaying(!playing)}>{playing ? "Pause" : "Play 30d"}</button></div>

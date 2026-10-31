@@ -66,7 +66,7 @@ Every data response is wrapped by `core/envelope.py` with `source`, `freshness` 
 
 ## Security
 
-- Both servers bind to 127.0.0.1. `TrustedHostMiddleware` rejects foreign Host headers, which blocks DNS rebinding. CORS allows only the local frontend.
+- By default both servers bind to 127.0.0.1. `--lan` exposes only the web app, behind the passcode check in `frontend/proxy.ts`. The API always stays on 127.0.0.1. `TrustedHostMiddleware` rejects foreign Host headers, which blocks DNS rebinding. CORS allows only the local frontend.
 - Secrets come from `.env`, which is git-ignored, and are never returned by the API.
 - XML is parsed with defusedxml. Uploads have a size limit, a type allow-list and sanitised names.
 - Retrieved text is treated as data: map popups use text nodes, feed links must be http or https, and the model gets no tools. Instruction-like phrases in evidence are flagged, which reduces but does not eliminate prompt-injection risk.

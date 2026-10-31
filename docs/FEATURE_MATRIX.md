@@ -2,6 +2,18 @@
 
 **Done** means built and exercised with real data or tests. **Partial** means useful but narrower than the brief. **No** means not built.
 
+## Version 2.1 additions
+
+| Feature | Status | Notes |
+| --- | --- | --- |
+| Layouts from 320 px phones to 2560 px monitors | Done | Automated checks at 8 sizes on 20 pages |
+| Phone tab bar, touch-sized controls, layers sheet | Done | |
+| Phone and tablet access over Wi-Fi with passcode | Done | Opt-in with `--lan` |
+| Price page for shares outside the US | Done | No statements without SEC data |
+| Watchlist star and quick price alert on charts | Done | |
+| News filter, shortcut list, error and not-found pages, offline banner | Done | |
+| Safari engine, iPhone and Android emulation tests | Done | Emulated, not real devices |
+
 ## Version 2 additions
 
 | Feature | Status | Notes |

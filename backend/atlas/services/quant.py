@@ -177,6 +177,68 @@ def optimise(prices: pd.DataFrame, objective: str = "max_sharpe", rf: float = 0.
             "sharpe": (ret - rf) / vol, "risk_free": rf, "start": r.index[0].strftime("%Y-%m-%d"), "end": r.index[-1].strftime("%Y-%m-%d")}
 
 
+STRESS_WINDOWS = [("Global financial crisis", "2008-09-01", "2009-03-09"), ("Euro debt scare", "2011-07-22", "2011-10-03"), ("Late 2018 sell-off", "2018-09-20", "2018-12-24"),
+                  ("COVID crash", "2020-02-19", "2020-03-23"), ("2022 rate shock", "2022-01-03", "2022-10-12")]
+
+
+def rolling_correlation(a: pd.Series, b: pd.Series, window: int = 63) -> list[dict]:
+    frame = pd.concat([a.pct_change(fill_method=None), b.pct_change(fill_method=None)], axis=1, keys=["a", "b"]).dropna()
+    corr = frame["a"].rolling(window).corr(frame["b"]).dropna()
+    return [{"date": d.strftime("%Y-%m-%d"), "value": float(v)} for d, v in corr.iloc[::5].items()]
+
+
+def vol_regimes(px: pd.Series, window: int = 21) -> dict:
+    """Labels each day by where its realised volatility sits in this asset's own history."""
+    vol = np.log(px).diff().rolling(window).std().dropna() * np.sqrt(TRADING_DAYS)
+    if len(vol) < 252:
+        raise ResearchError("Need at least a year of history.")
+    low, high = vol.quantile([1 / 3, 2 / 3])
+    label = pd.Series(np.select([vol <= low, vol >= high], ["calm", "stressed"], "normal"), index=vol.index)
+    next_month = px.pct_change(21, fill_method=None).shift(-21).reindex(vol.index)
+    stats = {k: {"days": int((label == k).sum()), "mean_next_month": float(next_month[label == k].mean())} for k in ("calm", "normal", "stressed")}
+    return {"current": label.iloc[-1], "current_vol": float(vol.iloc[-1]), "low_cut": float(low), "high_cut": float(high), "regimes": stats, "series": [{"date": d.strftime("%Y-%m-%d"), "vol": float(v)} for d, v in vol.iloc[::5].items()]}
+
+
+def stress_test(prices: dict[str, pd.Series], weights: dict[str, float]) -> list[dict]:
+    """Replays real past windows. Assets without history in a window are reported, not estimated."""
+    out = []
+    for name, start, end in STRESS_WINDOWS:
+        moves, missing = {}, []
+        for symbol, px in prices.items():
+            w = px[(px.index >= start) & (px.index <= end)]
+            if len(w) >= 2 and w.index[0] <= pd.Timestamp(start) + pd.Timedelta(days=7):
+                moves[symbol] = float(w.iloc[-1] / w.iloc[0] - 1)
+            else:
+                missing.append(symbol)
+        covered = sum(weights[s] for s in moves)
+        out.append({"name": name, "start": start, "end": end, "moves": moves, "missing": missing, "portfolio": sum(moves[s] * weights[s] for s in moves) / covered if covered else None, "weight_covered": covered})
+    return out
+
+
+def compare_strategies(px: pd.Series, cost_bps: float = 10) -> list[dict]:
+    """Each strategy against zero, with a p-value so that many comparisons can be corrected for."""
+    from scipy import stats
+
+    rows = []
+    for name, (fn, _grid) in STRATEGIES.items():
+        net = simulate(px, fn(px), cost_bps)["net"]
+        net = net[net.ne(0).cumsum() > 0]
+        t = float(net.mean() / (net.std() / np.sqrt(len(net)))) if len(net) > 2 and net.std() > 0 else None
+        rows.append({"strategy": name, **metrics(net), "t_stat": t, "p_value": float(2 * stats.t.sf(abs(t), len(net) - 1)) if t is not None else None})
+    return rows
+
+
+def multi_asset(prices: dict[str, pd.Series], strategy: str, cost_bps: float = 10) -> dict:
+    fn = _strategy(strategy)
+    legs = {s: simulate(px, fn(px), cost_bps)["net"] for s, px in prices.items()}
+    joined = pd.DataFrame(legs).dropna()
+    if len(joined) < 260:
+        raise ResearchError("Too little overlapping history.")
+    book = joined.mean(axis=1)
+    bench = pd.DataFrame({s: px.pct_change(fill_method=None) for s, px in prices.items()}).reindex(joined.index).mean(axis=1)
+    return {"strategy": strategy, "assets": list(prices), "metrics": metrics(book), "benchmark": metrics(bench), "legs": {s: metrics(joined[s]) for s in legs}, "curve": _curve(book, bench)}
+
+
 def factor_regression(asset: pd.Series, factors: pd.DataFrame) -> dict:
     data = pd.concat([asset.rename("asset"), factors], axis=1).dropna()
     if len(data) < 60:

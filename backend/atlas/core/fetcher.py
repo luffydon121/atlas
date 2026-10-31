@@ -115,6 +115,7 @@ class Fetcher:
         attempts: int | None = None,
         validate: Callable[[str], bool] | None = None,
         binary: bool = False,
+        timeout: float | None = None,
     ) -> Fetched:
         key = self._key(method, url, params, json_body)
         lock = self._keylocks.setdefault(key, asyncio.Lock())
@@ -128,10 +129,10 @@ class Fetcher:
             if cached and source_id in BACKGROUND_REFRESH and now - cached[2] < timedelta(seconds=ttl * 5):
                 # Answer now with the last copy, then update it for the next reader.
                 if key not in self._refreshing:
-                    self._refreshing[key] = asyncio.create_task(self._refresh(key, source_id, ttl, method, url, params, headers, json_body, attempts, validate, binary))
+                    self._refreshing[key] = asyncio.create_task(self._refresh(key, source_id, ttl, method, url, params, headers, json_body, attempts, validate, binary, timeout))
                 return Fetched(cached[0], cached[1], cached=True)
             try:
-                body = await self._request(source_id, method, url, params, headers, json_body, attempts or self.max_attempts, validate, binary)
+                body = await self._request(source_id, method, url, params, headers, json_body, attempts or self.max_attempts, validate, binary, timeout)
             except SourceUnavailable as exc:
                 _record(source_id, False, exc.reason)
                 if cached:
@@ -145,9 +146,9 @@ class Fetcher:
             _record(source_id, True)
             return Fetched(body, now)
 
-    async def _refresh(self, key, source_id, ttl, method, url, params, headers, json_body, attempts, validate, binary) -> None:
+    async def _refresh(self, key, source_id, ttl, method, url, params, headers, json_body, attempts, validate, binary, timeout=None) -> None:
         try:
-            body = await self._request(source_id, method, url, params, headers, json_body, attempts or self.max_attempts, validate, binary)
+            body = await self._request(source_id, method, url, params, headers, json_body, attempts or self.max_attempts, validate, binary, timeout)
         except SourceUnavailable as exc:
             _record(source_id, False, exc.reason)
         else:
@@ -158,14 +159,14 @@ class Fetcher:
         finally:
             self._refreshing.pop(key, None)
 
-    async def _request(self, source_id, method, url, params, headers, json_body, attempts, validate=None, binary=False) -> str:
+    async def _request(self, source_id, method, url, params, headers, json_body, attempts, validate=None, binary=False, timeout=None) -> str:
         merged = {"User-Agent": DEFAULT_UA, **(headers or {})}
         reason = "no attempt made"
         for attempt in range(attempts):
             await self._pacer(source_id).wait()
             wait = self.backoff_base * 2**attempt + random.uniform(0, 0.3)
             try:
-                response = await self.client.request(method, url, params=params, headers=merged, json=json_body)
+                response = await self.client.request(method, url, params=params, headers=merged, json=json_body, timeout=timeout or httpx.USE_CLIENT_DEFAULT)
             except httpx.HTTPError as exc:
                 reason = f"{type(exc).__name__}: {exc}"
             else:

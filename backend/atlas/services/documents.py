@@ -4,11 +4,14 @@ import hashlib
 import io
 import re
 
+import httpx
+import numpy as np
 from pypdf import PdfReader
 from pypdf.errors import PyPdfError
 from sqlalchemy import select, text
 
-from atlas.db import Document, session_scope
+from atlas.config import get_settings
+from atlas.db import Document, DocVector, session_scope
 
 ALLOWED = {".txt", ".md", ".csv", ".pdf"}
 CHUNK_WORDS = 180
@@ -31,10 +34,14 @@ def extract_pages(filename: str, raw: bytes) -> list[str]:
     if suffix not in ALLOWED:
         raise DocumentError(f"Unsupported file type. Allowed: {', '.join(sorted(ALLOWED))}")
     if suffix == ".pdf":
+        if not raw.startswith(b"%PDF-"):
+            raise DocumentError("That file is not a valid PDF")
         try:
             return [p.extract_text() or "" for p in PdfReader(io.BytesIO(raw)).pages]
         except (PyPdfError, ValueError, KeyError) as exc:
             raise DocumentError(f"Could not read PDF: {exc}") from exc
+    if b"\x00" in raw[:8192]:
+        raise DocumentError("That file looks binary, not text")
     try:
         return [raw.decode("utf-8")]
     except UnicodeDecodeError as exc:
@@ -77,9 +84,69 @@ def search(q: str, limit: int = 5) -> list[dict]:
     if not match:
         return []
     with session_scope() as db:
-        rows = db.execute(text("SELECT c.document_id, c.page, c.body, d.filename, d.uploaded_at FROM doc_chunks c JOIN documents d ON d.id = c.document_id "
+        rows = db.execute(text("SELECT c.document_id, c.page, c.body, d.filename, d.uploaded_at, c.rowid FROM doc_chunks c JOIN documents d ON d.id = c.document_id "
                                "WHERE doc_chunks MATCH :m ORDER BY bm25(doc_chunks) LIMIT :l"), {"m": match, "l": limit}).all()
-    return [{"document_id": r[0], "page": r[1], "text": r[2], "filename": r[3], "uploaded_at": str(r[4])} for r in rows]
+    return [{"document_id": r[0], "page": r[1], "text": r[2], "filename": r[3], "uploaded_at": str(r[4]), "rowid": r[5]} for r in rows]
+
+
+def _embed_model() -> str:
+    return get_settings().ollama_embed_model
+
+
+async def embed(texts: list[str]) -> list[np.ndarray] | None:
+    """Local embeddings through Ollama. Returns None when no model is set or it is not running."""
+    model = _embed_model()
+    if not model or not texts:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            res = await client.post(f"{get_settings().ollama_url}/api/embed", json={"model": model, "input": texts})
+            res.raise_for_status()
+            return [np.array(v, dtype="float32") for v in res.json()["embeddings"]]
+    except (httpx.HTTPError, KeyError, ValueError):
+        return None
+
+
+async def index_vectors(doc_id: int) -> int:
+    model = _embed_model()
+    if not model:
+        return 0
+    with session_scope() as db:
+        rows = db.execute(text("SELECT rowid, body FROM doc_chunks WHERE document_id = :d"), {"d": doc_id}).all()
+    vectors = await embed([r[1] for r in rows])
+    if vectors is None:
+        return 0
+    with session_scope() as db:
+        for (rowid, _), vector in zip(rows, vectors, strict=True):
+            db.merge(DocVector(chunk_id=rowid, model=model, vector=vector.tobytes()))
+    return len(vectors)
+
+
+def _chunk_row(rowid: int) -> dict | None:
+    with session_scope() as db:
+        r = db.execute(text("SELECT c.document_id, c.page, c.body, d.filename, d.uploaded_at FROM doc_chunks c JOIN documents d ON d.id = c.document_id WHERE c.rowid = :r"), {"r": rowid}).first()
+    return {"document_id": r[0], "page": r[1], "text": r[2], "filename": r[3], "uploaded_at": str(r[4]), "rowid": rowid} if r else None
+
+
+async def hybrid_search(q: str, limit: int = 5) -> list[dict]:
+    """Reciprocal rank fusion of keyword and vector results. Falls back to keywords alone."""
+    keyword = search(q, limit * 2)
+    query = await embed([q])
+    if query is None:
+        return keyword[:limit]
+    with session_scope() as db:
+        stored = db.execute(select(DocVector.chunk_id, DocVector.vector).where(DocVector.model == _embed_model())).all()
+    if not stored:
+        return keyword[:limit]
+    q_vec = query[0] / (np.linalg.norm(query[0]) or 1)
+    scored = sorted(((float(np.dot(q_vec, v := np.frombuffer(blob, dtype="float32")) / (np.linalg.norm(v) or 1)), rowid) for rowid, blob in stored), reverse=True)[: limit * 2]
+    ranks: dict[int, float] = {}
+    for rank, row in enumerate(keyword):
+        ranks[row["rowid"]] = ranks.get(row["rowid"], 0) + 1 / (60 + rank)
+    for rank, (_score, rowid) in enumerate(scored):
+        ranks[rowid] = ranks.get(rowid, 0) + 1 / (60 + rank)
+    best = sorted(ranks, key=ranks.get, reverse=True)[:limit]
+    return [r for rowid in best if (r := _chunk_row(rowid))]
 
 
 def list_documents() -> list[dict]:
@@ -93,6 +160,7 @@ def delete(doc_id: int) -> bool:
         doc = db.get(Document, doc_id)
         if not doc:
             return False
+        db.execute(text("DELETE FROM doc_vectors WHERE chunk_id IN (SELECT rowid FROM doc_chunks WHERE document_id = :d)"), {"d": doc_id})
         db.execute(text("DELETE FROM doc_chunks WHERE document_id = :d"), {"d": doc_id})
         db.delete(doc)
         return True

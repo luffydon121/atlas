@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-const PAGES = ["/", "/workspace", "/calendar", "/markets", "/chart?s=AAPL", "/company?t=AAPL", "/economy", "/crypto", "/map", "/satellite", "/weather", "/transport", "/geopolitics", "/alternative", "/quant", "/portfolio", "/alerts", "/sources", "/settings"];
+const PAGES = ["/", "/impact", "/briefing", "/holdings", "/events", "/quality", "/workspace", "/calendar", "/markets", "/chart?s=AAPL", "/company?t=AAPL", "/economy", "/crypto", "/map", "/satellite", "/weather", "/transport", "/geopolitics", "/alternative", "/quant", "/portfolio", "/alerts", "/sources", "/settings"];
 
 for (const path of PAGES) {
   test(`loads ${path} without page errors`, async ({ page }) => {
@@ -102,4 +102,35 @@ test.describe("dark theme", () => {
       expect(errors).toEqual([]);
     });
   }
+});
+
+test("search opens a company rather than asking the assistant", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByPlaceholder("Search any ticker").fill("microsoft");
+  await expect(page.getByRole("button", { name: /^MSFT Microsoft/ })).toBeVisible({ timeout: 15_000 });
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/MSFT/);
+});
+
+test("assistant answers without crashing", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await page.getByRole("button", { name: "Assistant" }).click();
+  await page.getByPlaceholder("Ask about markets").fill("What is happening in the global oil market?");
+  await page.getByRole("button", { name: "Ask", exact: true }).click();
+  await expect(page.locator(".answer").first()).toBeVisible({ timeout: 40_000 });
+  expect(errors).toEqual([]);
+});
+
+test("a non-US share gets a useful page", async ({ page }) => {
+  await page.goto("/company?t=BHP.AX");
+  await expect(page.getByText("52-week high")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("price-chart").locator("canvas").first()).toBeVisible({ timeout: 15_000 });
+});
+
+test("an unknown page is friendly", async ({ page }) => {
+  await page.goto("/nothing-here");
+  await expect(page.getByText("Page not found.")).toBeVisible();
 });

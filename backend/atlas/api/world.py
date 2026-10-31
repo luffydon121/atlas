@@ -6,12 +6,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from atlas.api.deps import Symbol
-from atlas.connectors import calendar, crypto, econ, news, world, yahoo
+from atlas.config import get_settings
+from atlas.connectors import calendar, crypto, econ, news, trade, world, yahoo
+from atlas.core import exposure
 from atlas.core import reference as ref
 from atlas.core.envelope import Freshness, envelope
 from atlas.core.errors import SourceUnavailable
-from atlas.db import SatelliteMeasurement, session_scope
-from atlas.services import analytics, briefing, satellite
+from atlas.db import MonitoringArea, SatelliteMeasurement, session_scope
+from atlas.services import analytics, briefing, impact, satellite, satellite_monitor
 
 router = APIRouter(prefix="/api", tags=["world"])
 
@@ -39,6 +41,9 @@ LAYERS = [
     {"id": "industrial", "label": "Mines and industrial sites", "group": "Industry", "source": "reference", "freshness": "reference"},
     {"id": "satellite_aois", "label": "Satellite watch areas", "group": "Satellite", "source": "reference", "freshness": "reference"},
     {"id": "economy", "label": "GDP growth by economy", "group": "Economy", "source": "worldbank", "freshness": "historical"},
+    {"id": "impact", "label": "Impact Engine events", "group": "Intelligence", "source": "atlas", "freshness": "delayed"},
+    {"id": "zones", "label": "Exposure regions", "group": "Intelligence", "source": "reference", "freshness": "reference"},
+    {"id": "monitoring", "label": "Your monitoring areas", "group": "Satellite", "source": "reference", "freshness": "reference"},
 ]
 CAPITALS = {"AU": (-35.3, 149.1), "US": (38.9, -77.0), "CN": (39.9, 116.4), "JP": (35.7, 139.7), "DE": (52.5, 13.4), "GB": (51.5, -0.1), "IN": (28.6, 77.2),
             "BR": (-15.8, -47.9), "ID": (-6.2, 106.8), "KR": (37.6, 127.0)}
@@ -80,13 +85,13 @@ async def layer(layer: str, west: float = Query(-180, ge=-180, le=180), south: f
     match layer:
         case "hazards_quakes":
             rows = await world.earthquakes()
-            return envelope(collection([point(q["lon"], q["lat"], **{k: v for k, v in q.items() if k not in ("lat", "lon")}) for q in rows]), source="usgs", freshness=Freshness.LIVE)
+            return envelope(collection([point(q["lon"], q["lat"], **{k: v for k, v in q.items() if k not in ("lat", "lon")}) for q in rows]), source="usgs", freshness=Freshness.DELAYED)
         case "hazards_events":
             rows = await world.natural_events()
-            return envelope(collection([point(e["lon"], e["lat"], **{k: v for k, v in e.items() if k not in ("lat", "lon")}) for e in rows]), source="eonet", freshness=Freshness.LIVE)
+            return envelope(collection([point(e["lon"], e["lat"], **{k: v for k, v in e.items() if k not in ("lat", "lon")}) for e in rows]), source="eonet", freshness=Freshness.DELAYED)
         case "hazards_storms":
             rows = await world.tropical_storms()
-            return envelope(collection([point(s["lon"], s["lat"], **{k: v for k, v in s.items() if k not in ("lat", "lon")}) for s in rows if s["lon"] is not None]), source="nhc", freshness=Freshness.LIVE, note=None if rows else "No active storms in the NHC basins.")
+            return envelope(collection([point(s["lon"], s["lat"], **{k: v for k, v in s.items() if k not in ("lat", "lon")}) for s in rows if s["lon"] is not None]), source="nhc", freshness=Freshness.DELAYED, note=None if rows else "No active storms in the NHC basins.")
         case "agriculture":
             feats = [point(r["lon"], r["lat"], name=r["region"], commodity=c["commodity"], level=r["risk"]["level"], drivers="; ".join(r["risk"]["drivers"]))
                      for c in world.LATEST_RISK.values() for r in c["regions"]]
@@ -98,7 +103,7 @@ async def layer(layer: str, west: float = Query(-180, ge=-180, le=180), south: f
         case "geopolitics":
             rows, failed = await _events()
             feats = [point(e["lon"], e["lat"], **{k: v for k, v in e.items() if k not in ("lat", "lon")}) for e in rows if e.get("lat") is not None]
-            return envelope(collection(feats), source=["federalregister", "gdelt"], freshness=Freshness.LIVE, note=(f"Unavailable: {', '.join(failed)}. " if failed else "") + "Pins mark places named in a headline.")
+            return envelope(collection(feats), source=["federalregister", "gdelt"], freshness=Freshness.DELAYED, note=(f"Unavailable: {', '.join(failed)}. " if failed else "") + "Pins mark places named in a headline.")
         case "chokepoints":
             rows = await world.chokepoints_ready()
             return envelope(collection([point(c["lon"], c["lat"], **{k: v for k, v in c.items() if k not in ("lat", "lon", "history") and not k.startswith("_")}) for c in rows]), source="portwatch", freshness=Freshness.HISTORICAL)
@@ -120,6 +125,20 @@ async def layer(layer: str, west: float = Query(-180, ge=-180, le=180), south: f
             return envelope(collection([point(s["lon"], s["lat"], name=s["name"], kind=s["kind"]) for s in rows]), source="reference", freshness=Freshness.REFERENCE)
         case "satellite_aois":
             return envelope(collection([point((a["bbox"][0] + a["bbox"][2]) / 2, (a["bbox"][1] + a["bbox"][3]) / 2, id=a["id"], name=a["name"], tracker=a["tracker"]) for a in ref.SATELLITE_AOIS]), source="reference", freshness=Freshness.REFERENCE)
+        case "impact":
+            await impact.refresh()
+            rows = [e for e in impact.feed(30) if e["lat"] is not None]
+            return envelope(collection([point(e["lon"], e["lat"], id=e["id"], title=e["title"], severity=e["severity"], verification=e["verification"], category=e["category_label"], time=e["observed_at"], exposed=e["exposed"]) for e in rows]), source="atlas", freshness=Freshness.DELAYED)
+        case "zones":
+            feats = [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[w, s_], [e_, s_], [e_, n], [w, n], [w, s_]]]}, "properties": {"name": z["name"], "id": k}} for k, z in exposure.ZONES.items() for w, s_, e_, n in [z["bbox"]]]
+            return envelope(collection(feats), source="reference", freshness=Freshness.REFERENCE, note="Rough boxes used to match events to documented exposures.")
+        case "monitoring":
+            if get_settings().public_read_only:
+                return envelope(collection([]), source="reference", freshness=Freshness.REFERENCE)
+            with session_scope() as db:
+                areas = [satellite_monitor.to_dict(a) for a in db.scalars(select(MonitoringArea))]
+            feats = [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[*a["polygon"], a["polygon"][0]]]}, "properties": {"name": a["name"], "tracker": a["tracker_label"]}} for a in areas]
+            return envelope(collection(feats), source="reference", freshness=Freshness.REFERENCE)
         case "economy":
             parsed = econ.parse_world_bank((await econ.world_bank("gdp_growth", list(econ.WB_COUNTRIES), 3)).json())
             feats = []
@@ -151,7 +170,7 @@ async def weather_forecast(lat: float = Query(ge=-90, le=90), lon: float = Query
 
 @router.get("/hazards/us-alerts")
 async def us_alerts():
-    return envelope(await world.nws_alerts(), source="nws", freshness=Freshness.LIVE)
+    return envelope(await world.nws_alerts(), source="nws", freshness=Freshness.DELAYED)
 
 
 @router.get("/aviation/airports")
@@ -185,7 +204,7 @@ async def geo_events():
     rows, failed = await _events()
     tiers = {"official": 0, "automated": 1}
     rows.sort(key=lambda e: (tiers.get(e["tier"], 2), str(e.get("time"))), reverse=False)
-    return envelope({"events": rows, "unavailable": failed}, source=["federalregister", "gdelt"], freshness=Freshness.LIVE,
+    return envelope({"events": rows, "unavailable": failed}, source=["federalregister", "gdelt"], freshness=Freshness.DELAYED,
                     note="Official = published by a government source. Automated = machine-collected news, unverified.")
 
 
@@ -213,7 +232,7 @@ async def calendar_view():
 async def news_feed(tier: str | None = Query(None, pattern="^(official|media)$"), q: str | None = Query(None, max_length=60), limit: int = Query(60, ge=1, le=200)):
     refreshed = await news.refresh()
     rows = news.latest(limit, tier, q)
-    return envelope(rows, source="rss", freshness=Freshness.LIVE, note=f"Feeds unavailable: {', '.join(refreshed['failed'])}" if refreshed["failed"] else None)
+    return envelope(rows, source="rss", freshness=Freshness.DELAYED, note=f"Feeds unavailable: {', '.join(refreshed['failed'])}" if refreshed["failed"] else None)
 
 
 # -- Crypto -----------------------------------------------------------------------------------------------
@@ -233,7 +252,7 @@ async def crypto_live():
 @router.get("/crypto/networks")
 async def crypto_networks():
     btc, eth = await asyncio.gather(crypto.bitcoin_network(), crypto.ethereum_network(), return_exceptions=True)
-    return envelope({"bitcoin": None if isinstance(btc, Exception) else {k: v for k, v in btc.items() if not k.startswith("_")}, "ethereum": None if isinstance(eth, Exception) else eth}, source=["mempool", "ethrpc"], freshness=Freshness.LIVE)
+    return envelope({"bitcoin": None if isinstance(btc, Exception) else {k: v for k, v in btc.items() if not k.startswith("_")}, "ethereum": None if isinstance(eth, Exception) else eth}, source=["mempool", "ethrpc"], freshness=Freshness.DELAYED)
 
 
 @router.get("/crypto/defi")
@@ -245,22 +264,31 @@ async def crypto_defi():
 
 # -- Alternative data -------------------------------------------------------------------------------------
 
+def _sig(id, name, status, method, history, source, frequency, limitations, confidence, validation, assets):  # noqa: A002
+    return {"id": id, "name": name, "status": status, "method": method, "history": history, "source": source, "frequency": frequency, "limitations": limitations, "confidence": confidence, "validation": validation, "assets": assets}
+
+
 ALT_SIGNALS = [
-    {"id": "attention", "name": "Public attention (Wikipedia views)", "status": "live", "method": "Daily human pageviews. z-score of the 7-day mean log views against the prior 90 days.",
-     "uncertainty": "Spikes follow news as often as they lead it. English Wikipedia only.", "validation": "Per-ticker correlation with next-day absolute return, split in-sample and out-of-sample."},
-    {"id": "chokepoints", "name": "Shipping congestion and disruption", "status": "live", "method": "IMF PortWatch daily transit estimates against a one-year baseline.", "uncertainty": "AIS-derived estimate, published with a lag.", "validation": "Published by the IMF; not separately validated by ATLAS."},
-    {"id": "crop_weather", "name": "Crop-region weather stress", "status": "live", "method": "30-day rain and temperature anomaly against the prior 10 years, plus frost and heat forecast days.", "uncertainty": "Point samples, not crop maps. Weights are approximate.", "validation": "No yield validation yet."},
-    {"id": "land_change", "name": "Mine, construction and water change", "status": "live", "method": "Sentinel-2 normalised difference index change with cloud masking.", "uncertainty": "10-20 m pixels. Seasonal and illumination effects.", "validation": "Confidence is derived from clear-pixel share and noise. No ground-truth evaluation yet."},
-    {"id": "airport_activity", "name": "Airport activity proxy", "status": "live", "method": "ADS-B aircraft count near airport, sampled when requested.", "uncertainty": "Receiver coverage varies. Snapshots only.", "validation": "None yet; history must accumulate."},
-    *[{"id": n.lower().replace(" ", "_"), "name": n, "status": "not implemented", "method": why, "uncertainty": "-", "validation": "-"} for n, why in [
-        ("Retail parking occupancy", "Needs sub-metre imagery, which is not free."),
-        ("Google search trends", "No official free API. Wikipedia attention is the substitute."),
-        ("Job advertisements", "No lawful free global feed identified."),
-        ("Product prices and stockouts", "Needs per-site collection that respects each retailer's terms."),
-        ("Hotel and airline pricing", "No lawful free feed identified."),
-        ("Patents and procurement", "Free official sources exist; connectors are not built yet."),
-        ("Company website changes", "Planned: robots-aware monitor for user-chosen pages."),
-    ]],
+    _sig("attention", "Wikipedia attention", "live", "Daily human pageviews. z-score of the 7-day mean of log views against the prior 90 days.", "About 400 days per query, stored as you use it", "Wikimedia", "Daily", "Spikes follow news as often as they lead it. English Wikipedia only.", "medium", "Per-ticker correlation with next-day absolute return, in and out of sample.", "Any company with an article"),
+    _sig("google_trends", "Google Trends", "blocked", "None", "None", "None", "None", "Google offers no official free API, and scraping would breach its terms. Wikipedia attention is the lawful substitute.", "none", "None", "None"),
+    _sig("hiring", "Corporate hiring trends", "blocked", "None", "None", "None", "None", "No lawful free global source was found. Job sites prohibit scraping.", "none", "None", "None"),
+    _sig("job_ads", "Public job advertisements", "blocked", "None", "None", "None", "None", "Same as hiring trends.", "none", "None", "None"),
+    _sig("product_prices", "Retail product prices", "blocked", "None", "None", "None", "None", "Needs per-retailer collection that respects each site's terms.", "none", "None", "None"),
+    _sig("availability", "Online product availability", "blocked", "None", "None", "None", "None", "Same as retail prices.", "none", "None", "None"),
+    _sig("permits", "Construction permits", "planned", "Official national series could be connected.", "None yet", "ABS and US Census publish these", "Monthly", "Not connected yet.", "none", "None", "Homebuilders, materials"),
+    _sig("procurement", "Public procurement spending", "live", "Largest US federal contract awards to a named recipient in the past year.", "Past 12 months", "USAspending.gov", "Daily", "US federal only. Award ceiling is not revenue.", "medium", "None. Descriptive only.", "US contractors"),
+    _sig("patents", "Patent applications", "blocked", "None", "None", "USPTO", "None", "The USPTO API needs a registered key, which ATLAS does not have.", "none", "None", "Technology companies"),
+    _sig("crop_weather", "Agricultural weather risk", "live", "30-day rain and temperature anomaly against the prior 10 years, plus frost and heat days in growing season.", "About 11 years", "Open-Meteo", "Daily", "Point samples, not crop maps. Weights are approximate.", "medium", "No yield validation yet.", "Grains, coffee, cocoa"),
+    _sig("mining", "Mining activity", "live", "Sentinel-2 bare-ground index change at mine sites, same season against a year earlier.", "Grows with each observation", "Sentinel-2", "About 5 days", "10 to 20 m pixels. Shows surface change, not output.", "low", "No ground-truth validation.", "Miners"),
+    _sig("shipping", "Shipping disruptions", "live", "PortWatch transit estimates against a one-year baseline.", "400 days", "IMF PortWatch", "Daily, several days late", "AIS-derived estimates.", "medium", "Published by the IMF. Not validated by ATLAS.", "Tankers, carriers, energy"),
+    _sig("airports", "Airport activity", "partial", "ADS-B aircraft near an airport, sampled when requested.", "Only what you have sampled", "OpenSky", "On demand", "Receiver coverage varies. Snapshots only.", "low", "None. History must accumulate.", "Airlines"),
+    _sig("tourism", "Tourism indicators", "planned", "Official arrivals data could be connected.", "None yet", "ABS and national statistics", "Monthly", "Not connected yet.", "none", "None", "Airlines, hotels"),
+    _sig("energy_output", "Energy production indicators", "partial", "EIA weekly crude stocks are connected. Production series are not yet.", "10 years of stocks", "EIA", "Weekly", "US only.", "high", "Official statistics.", "Oil, gas"),
+    _sig("inventories", "Public commodity inventories", "live", "EIA commercial crude stocks and their weekly change.", "10 years", "EIA", "Weekly", "US crude only.", "high", "Official statistics.", "WTI crude, refiners"),
+    _sig("renewables", "Renewable infrastructure", "partial", "Satellite tracker for large solar farm land clearing, in user-drawn areas.", "Grows with each observation", "Sentinel-2", "About 5 days", "Shows land change, not capacity.", "low", "No ground-truth validation.", "Solar developers"),
+    _sig("websites", "Corporate website changes", "planned", "A robots-aware monitor for pages you choose.", "None yet", "None yet", "None", "Not built.", "none", "None", "Any company"),
+    _sig("real_estate", "Public real estate indicators", "partial", "RBA and FRED housing series, where configured.", "Varies", "FRED", "Monthly", "Needs a free FRED key.", "medium", "Official statistics.", "Homebuilders, banks"),
+    _sig("supply_chain", "Global supply-chain activity", "live", "Port calls and chokepoint transits against a year earlier.", "400 days", "IMF PortWatch", "Daily, several days late", "A proxy. Rising calls can mean demand or diversion.", "medium", "None by ATLAS.", "Carriers, retailers, exporters"),
 ]
 
 
@@ -269,6 +297,20 @@ def alt_signals():
     return envelope(ALT_SIGNALS, source="atlas", freshness=Freshness.REFERENCE)
 
 
+
+
+@router.get("/alt/inventories")
+async def inventories():
+    rows, fetched, stale = await econ.load(econ.BY_ID["us.crude_stocks"])
+    recent = rows[-104:]
+    changes = [{"date": d, "value": v, "change": v - recent[i - 1][1] if i else None} for i, (d, v) in enumerate(recent)]
+    return envelope(changes, source="eia", freshness=Freshness.HISTORICAL, fetched_at=fetched, stale=stale, as_of=rows[-1][0] if rows else None)
+
+
+@router.get("/alt/procurement")
+async def procurement(company: str = Query(min_length=2, max_length=60)):
+    res = await trade.procurement(company)
+    return envelope(res["awards"], source="usaspending", freshness=Freshness.HISTORICAL, fetched_at=res["_fetched"], stale=res["_stale"], note="US federal awards only. Award amounts are ceilings, not revenue.")
 
 
 @router.get("/alt/attention/{symbol}")

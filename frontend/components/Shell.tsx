@@ -49,7 +49,7 @@ function Spotlight({ onClose, onAsk }: { onClose: () => void; onAsk: (q: string)
   const pages = text ? NAV.filter((n) => n.label.toLowerCase().includes(text)).map((p) => ({ key: p.href, label: p.label, sub: p.desc, href: p.href })) : [];
   const symbols = text ? rows.map((r) => ({ key: r.symbol, label: `${r.symbol}  ${r.name}`, sub: `${r.type} ${r.exchange}`, href: destination(r) })) : [];
   const history = text ? [] : recent.map((r) => ({ ...r, key: r.href }));
-  const ask = text.length > 8 ? [{ key: "ask", label: `Ask the assistant: ${q.trim()}`, sub: "Cited answer", href: "" }] : [];
+  const ask = /\s/.test(text) || text.endsWith("?") ? [{ key: "ask", label: `Ask the assistant: ${q.trim()}`, sub: "Cited answer", href: "" }] : [];
   const items = [...pages, ...symbols, ...history, ...ask];
 
   function go(item: (typeof items)[number]) {
@@ -100,6 +100,35 @@ function Bell() {
   );
 }
 
+function Shortcuts({ onClose }: { onClose: () => void }) {
+  const rows = [["⌘K or /", "Search"], ["⌘J", "Assistant"], ["?", "This list"], ["Esc", "Close"], ...NAV.map((n) => [`g ${n.key}`, n.label])];
+  return (
+    <div className="spot-wrap" onClick={onClose}>
+      <div className="spot" role="dialog" aria-label="Keyboard shortcuts" onClick={(e) => e.stopPropagation()}>
+        <div className="panel-head"><span className="panel-title">Keyboard shortcuts</span><button className="btn" style={{ marginLeft: "auto" }} onClick={onClose}>Done</button></div>
+        <div className="spot-list" style={{ columns: 2, padding: "8px 16px 16px" }}>{rows.map(([k, l]) => <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "4px 0", breakInside: "avoid" }}><span>{l}</span><span className="muted">{k}</span></div>)}</div>
+      </div>
+    </div>
+  );
+}
+
+function Offline() {
+  const { error } = useApi("/api/health", { refreshInterval: 15_000, shouldRetryOnError: true, errorRetryInterval: 5000 });
+  if (!error) return null;
+  return <div className="offline" role="status">ATLAS can&apos;t reach its data service. Showing saved data and retrying.</div>;
+}
+
+function TabBar({ path, onSearch }: { path: string; onSearch: () => void }) {
+  const group = NAV.find((n) => n.href === path)?.group;
+  const tabs = [{ label: "Today", href: "/", on: path === "/" }, { label: "Markets", href: "/markets", on: group === "Markets" }, { label: "World", href: "/map", on: group === "World" }, { label: "Intel", href: "/impact", on: group === "Intelligence" || group === "Research" || group === "Economy" }];
+  return (
+    <nav className="tabbar" aria-label="Main">
+      {tabs.map((t) => <Link key={t.href} href={t.href} className={t.on ? "on" : ""}>{t.label}</Link>)}
+      <button onClick={onSearch}>Search</button>
+    </nav>
+  );
+}
+
 function FullBleed(path: string) {
   return path === "/" || path === "/map" || path === "/workspace";
 }
@@ -112,6 +141,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [question, setQuestion] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
   const [fly, setFly] = useState<string | null>(null);
+  const [help, setHelp] = useState(false);
   const prefix = useRef(0);
   const flyTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const page = NAV.find((n) => n.href === path);
@@ -125,9 +155,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
     const typing = /INPUT|TEXTAREA|SELECT/.test((e.target as HTMLElement).tagName);
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setSearch((v) => !v); return; }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") { e.preventDefault(); setAi((v) => !v); return; }
-    if (e.key === "Escape") { setFly(null); return; }
+    if (e.key === "Escape") { setFly(null); setHelp(false); return; }
     if (typing || e.metaKey || e.ctrlKey) return;
     if (e.key === "/") { e.preventDefault(); setSearch(true); return; }
+    if (e.key === "?") { setHelp((v) => !v); return; }
     if (Date.now() - prefix.current < 900) {
       const hit = NAV.find((n) => n.key === e.key);
       if (hit) router.push(hit.href);
@@ -141,20 +172,22 @@ export function Shell({ children }: { children: React.ReactNode }) {
   }, [onKey]);
 
   const items = NAV.filter((n) => n.group === fly);
+  if (path === "/unlock") return <main>{children}</main>;
   return (
     <>
       <header className="gnav" onMouseLeave={() => hover(null)}>
         <div className="gnav-in">
-          <button className="icon-btn menu-btn" aria-label="Open menu" onClick={() => setMenu(!menu)}>{Icon.menu}</button>
+          <button className="icon-btn menu-btn" aria-label={menu ? "Close menu" : "Open menu"} aria-expanded={menu} onClick={() => setMenu(!menu)}>{Icon.menu}</button>
           <Link href="/" className="logo" onMouseEnter={() => hover(null)}>ATLAS</Link>
-          <nav aria-label="Modules" className={`gnav-links ${menu ? "open" : ""}`} style={{ display: menu ? undefined : "flex" }} onClick={() => setMenu(false)}>
+          <nav aria-label="Modules" className={`gnav-links ${menu ? "open" : ""}`} onClick={() => setMenu(false)}>
             <Link href="/" className={`gnav-link ${path === "/" ? "on" : ""}`} onMouseEnter={() => hover(null)}>Today</Link>
             {GROUPS.map((g) => menu ? (
               <div key={g} style={{ margin: "10px 0" }}><div className="muted" style={{ fontSize: 12 }}>{g}</div>{NAV.filter((n) => n.group === g).map((n) => <Link key={n.href} href={n.href} style={{ display: "block", padding: "5px 0", fontSize: 19, fontWeight: 600 }}>{n.label}</Link>)}</div>
             ) : (
               <Link key={g} href={NAV.find((n) => n.group === g)!.href} className={`gnav-link ${page?.group === g ? "on" : ""}`} onMouseEnter={() => hover(g)} onFocus={() => hover(g)}>{g}</Link>
             ))}
-            <Link href="/sources" className={`gnav-link ${page?.group === "System" ? "on" : ""}`} onMouseEnter={() => hover("System")}>{menu ? "Sources and settings" : "System"}</Link>
+            {menu ? <div style={{ margin: "10px 0" }}><div className="muted" style={{ fontSize: 12 }}>System</div>{NAV.filter((n) => n.group === "System").map((n) => <Link key={n.href} href={n.href} style={{ display: "block", padding: "5px 0", fontSize: 19, fontWeight: 600 }}>{n.label}</Link>)}</div>
+              : <Link href="/quality" className={`gnav-link ${page?.group === "System" ? "on" : ""}`} onMouseEnter={() => hover("System")}>System</Link>}
           </nav>
           <div className="gnav-right">
             <button className="icon-btn" aria-label="Search" onClick={() => setSearch(true)}>{Icon.search}</button>
@@ -170,9 +203,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>}
       </header>
       {fly && <div className="scrim" onMouseEnter={() => setFly(null)} />}
-      {page && !FullBleed(path) && <div className="hero" key={path}><h1>{page.tagline}</h1></div>}
+      {page && !FullBleed(path) && <div className="hero" key={`hero:${path}`}><h1>{page.tagline}</h1></div>}
+      <Offline />
       <main key={path}>{children}</main>
+      <TabBar path={path} onSearch={() => setSearch(true)} />
       {ai && <Assistant onClose={() => setAi(false)} initial={question} />}
+      {help && <Shortcuts onClose={() => setHelp(false)} />}
       {search && <Spotlight onClose={() => setSearch(false)} onAsk={(q) => { setQuestion(q); setAi(true); }} />}
     </>
   );

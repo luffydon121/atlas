@@ -5,6 +5,7 @@ from datetime import date
 
 from sqlalchemy import select
 
+from atlas.config import get_settings
 from atlas.connectors import calendar, crypto, econ, news, world, yahoo
 from atlas.core import reference as ref
 from atlas.core.errors import SourceUnavailable
@@ -62,7 +63,7 @@ async def today() -> dict:
     with session_scope() as db:
         for w in db.scalars(select(Watchlist).order_by(Watchlist.id)):
             watchlists += [i.symbol for i in w.items]
-        alerts = [{"title": n.title, "body": n.body, "severity": n.severity} for n in db.scalars(select(Notification).order_by(Notification.created_at.desc()).limit(4))]
+        alerts = [] if get_settings().public_read_only else [{"title": n.title, "body": n.body, "severity": n.severity} for n in db.scalars(select(Notification).order_by(Notification.created_at.desc()).limit(4))]
     watchlists = list(dict.fromkeys(watchlists))[:20]
     labels = ref.INDICES | ref.RATES_VOL | ref.COMMODITIES | ref.CRYPTO | ref.FX
     headline_set = ["^GSPC", "^IXIC", "^AXJO", "^N225", "^FTSE", "^VIX", "CL=F", "GC=F", "BTC-USD", "ETH-USD", "AUDUSD=X", "^TNX"]

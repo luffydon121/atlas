@@ -5,7 +5,8 @@ import { Group, Panel as Pane, Separator, useDefaultLayout } from "react-resizab
 import { PriceChart } from "@/components/PriceChart";
 import { Panel, State } from "@/components/ui";
 import { MacroPanel, NewsPanel, type Quote, QuoteTable, WatchlistPanel } from "@/components/widgets";
-import { get, send, useEnvelope } from "@/lib/api";
+import { get, send, useApi, useEnvelope } from "@/lib/api";
+import { useSmallScreen } from "@/lib/theme";
 
 type Overview = Record<string, Quote[]>;
 const GROUPS = [["indices", "Indices"], ["rates", "Rates & vol"], ["commodities", "Commodities"], ["fx", "FX"], ["crypto", "Crypto"], ["sectors", "Sectors"]] as const;
@@ -28,19 +29,40 @@ export default function Workspace() {
     if (loaded.current) send("/api/layouts/dashboard", "PUT", next).catch(() => {});
   };
 
+  const [name, setName] = useState("");
+  const saved = useApi<string[]>("/api/layouts");
+  const names = (saved.data ?? []).filter((n) => n.startsWith("workspace:")).map((n) => n.slice(10));
+  const saveNamed = () => {
+    if (name.trim()) send(`/api/layouts/${encodeURIComponent(`workspace:${name.trim()}`)}`, "PUT", spec).then(() => { setName(""); saved.mutate(); }).catch(() => {});
+  };
+  const openNamed = (n: string) => get(`/api/layouts/${encodeURIComponent(`workspace:${n}`)}`).then((r) => { if (r?.spec) update({ ...DEFAULTS, ...r.spec }); }).catch(() => {});
   const main = useDefaultLayout({ id: "atlas-main", storage: panelStorage });
   const left = useDefaultLayout({ id: "atlas-left", storage: panelStorage });
   const right = useDefaultLayout({ id: "atlas-right", storage: panelStorage });
   const select = spec.symbol;
+  const small = useSmallScreen();
+  const left_ = <Panel title={<select className="input" aria-label="Left panel content" value={spec.left} onChange={(e) => update({ left: e.target.value })}>{GROUPS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>} meta={data?.meta} style={{ height: "100%" }}>
+    <State loading={isLoading} error={error}><QuoteTable rows={data?.data[spec.left] ?? []} selected={select} onSelect={(symbol) => update({ symbol })} /></State>
+  </Panel>;
+  if (small) {
+    return (
+      <div className="page" style={{ paddingTop: 16 }}>
+        <section className="panel chart-box tall"><PriceChart symbol={select} key={select} /></section>
+        {left_}
+        <WatchlistPanel selected={select} onSelect={(symbol) => update({ symbol })} />
+        <MacroPanel />
+        <div style={{ maxHeight: 420, display: "flex", flexDirection: "column" }}><NewsPanel /></div>
+      </div>
+    );
+  }
   return (
-    <div style={{ height: "calc(100dvh - 48px)", padding: 12, maxWidth: 1800, margin: "0 auto", animation: "fade .4s both" }}>
-      <Group orientation="horizontal" id="atlas-main" {...main}>
+    <div style={{ height: "calc(100dvh - 48px)", padding: 12, maxWidth: 1800, margin: "0 auto", animation: "fade .4s both", display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className="row"><span className="muted">Layouts</span>{names.map((n) => <button key={n} className="btn" onClick={() => openNamed(n)}>{n}</button>)}<input className="input" style={{ width: 130 }} aria-label="Layout name" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} /><button className="btn" disabled={!name.trim()} onClick={saveNamed}>Save layout</button></div>
+      <Group orientation="horizontal" id="atlas-main" {...main} style={{ flex: 1, minHeight: 0 }}>
         <Pane defaultSize="24%" minSize="14%">
           <Group orientation="vertical" id="atlas-left" {...left}>
             <Pane defaultSize="60%" minSize="20%">
-              <Panel title={<select className="input" aria-label="Left panel content" value={spec.left} onChange={(e) => update({ left: e.target.value })}>{GROUPS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>} meta={data?.meta} style={{ height: "100%" }}>
-                <State loading={isLoading} error={error}><QuoteTable rows={data?.data[spec.left] ?? []} selected={select} onSelect={(symbol) => update({ symbol })} /></State>
-              </Panel>
+              {left_}
             </Pane>
             <Separator className="resize-v" />
             <Pane minSize="15%"><MacroPanel /></Pane>

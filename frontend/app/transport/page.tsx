@@ -10,7 +10,12 @@ type Choke = { id: string; name: string; available: boolean; loading?: boolean; 
 type Airport = { code: string; name: string };
 type Activity = { name: string; aircraft_nearby: number; on_ground: number; airborne: number; history: { time: string; value: number }[] };
 
+type Port = { portid: string; portname: string; country: string; available: boolean; loading?: boolean; latest_date?: string; calls_7d_avg?: number; baseline_avg?: number; pct_vs_baseline?: number | null; container_7d?: number; tanker_7d?: number; history?: { date: string; calls: number }[] };
+
 export default function Transport() {
+  const ports = useEnvelope<Port[]>("/api/trade/ports", { refreshInterval: (d) => (d?.data.some((p: Port) => p.loading) ? 15_000 : 0) });
+  const [portId, setPortId] = useState("port1188");
+  const port = ports.data?.data.find((p) => p.portid === portId);
   const ships = useEnvelope<Choke[]>("/api/shipping/chokepoints", { refreshInterval: (d) => (d?.data.some((c: Choke) => c.loading) ? 10_000 : 0) });
   const airports = useEnvelope<Airport[]>("/api/aviation/airports");
   const [id, setId] = useState("chokepoint1");
@@ -29,6 +34,15 @@ export default function Transport() {
         <Panel title={`${c?.name ?? ""} daily transits`}>
           <EChart height={290} option={lineOption([{ name: "Total", points: c?.history?.map((h) => [h.date, h.total]) ?? [] }, { name: "Tanker", points: c?.history?.map((h) => [h.date, h.tanker]) ?? [] }, { name: "Container", points: c?.history?.map((h) => [h.date, h.container]) ?? [] }], { scale: false })} />
         </Panel>
+      </div>
+      <div className="grid-2">
+        <Panel title="Major ports" meta={ports.data?.meta}>
+          <State loading={ports.isLoading && !ports.data} error={ports.error}>
+            <table className="t sticky"><thead><tr><th>Port</th><th>Calls/day</th><th>vs 1Y</th><th>Container</th><th>Tanker</th></tr></thead>
+              <tbody>{ports.data?.data.map((p) => <tr key={p.portid} onClick={() => setPortId(p.portid)} style={{ cursor: "pointer", background: p.portid === portId ? "var(--panel-2)" : undefined }}><td>{p.portname}<div className="muted" style={{ fontSize: 12 }}>{p.country}</div></td>{p.available ? <><td>{num(p.calls_7d_avg, 1)}</td><td className={tone(p.pct_vs_baseline)}>{pct(p.pct_vs_baseline, 1)}</td><td>{num(p.container_7d, 1)}</td><td>{num(p.tanker_7d, 1)}</td></> : <td colSpan={4} className="muted">{p.loading ? "Loading…" : "No data"}</td>}</tr>)}</tbody></table>
+          </State>
+        </Panel>
+        <Panel title={`${port?.portname ?? "Port"} daily calls`}><EChart height={290} option={lineOption([{ name: "Port calls", points: port?.history?.map((h): [string, number] => [h.date, h.calls]) ?? [] }], { scale: false })} /></Panel>
       </div>
       <Panel title="Airport activity proxy" meta={air.data?.meta} actions={<select className="input" aria-label="Airport" value={code} onChange={(e) => setCode(e.target.value)}>{airports.data?.data.map((a) => <option key={a.code} value={a.code}>{a.code} {a.name}</option>)}</select>}>
         <State loading={air.isLoading} error={air.error}>

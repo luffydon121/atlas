@@ -23,6 +23,7 @@ INDICES = {
     "ndvi": {"bands": ("nir", "red"), "name": "Vegetation (NDVI)", "meaning": "Higher means denser green vegetation"},
     "ndwi": {"bands": ("green", "nir"), "name": "Surface water (NDWI)", "meaning": "Above 0 usually indicates open water"},
     "bsi": {"bands": ("swir16", "nir"), "name": "Bare ground (NDBI-style)", "meaning": "Higher means more exposed soil or built surface"},
+    "nbr": {"bands": ("nir", "swir22"), "name": "Burn ratio (NBR)", "meaning": "A large fall after a fire indicates burned vegetation"},
 }
 # Sentinel-2 scene classes kept as clear ground: vegetation, bare soil, water, unclassified.
 CLEAR_SCL = (4, 5, 6, 7)
@@ -37,7 +38,7 @@ def scene_from_item(item: dict, mission: str) -> dict:
     return {"id": item["id"], "acquired_at": p.get("datetime"), "cloud_cover": p.get("eo:cloud_cover"), "platform": p.get("platform"),
             "constellation": p.get("constellation"), "mission": mission, "resolution_m": GSD[mission],
             "thumbnail": (assets.get("thumbnail") or assets.get("preview") or {}).get("href"), "bbox": item.get("bbox"),
-            "assets": {k: assets[k]["href"] for k in ("red", "green", "nir", "swir16", "scl") if k in assets}}
+            "assets": {k: assets[k]["href"] for k in ("red", "green", "nir", "swir16", "swir22", "scl") if k in assets}}
 
 
 async def search(bbox: list[float], start: str, end: str, mission: str = "sentinel-2", max_cloud: float = 30, limit: int = 20, catalog: str = "earthsearch") -> dict:

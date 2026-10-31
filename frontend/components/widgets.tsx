@@ -54,6 +54,19 @@ export function WatchlistPanel({ selected, onSelect }: { selected?: string; onSe
     if (!list || !dragging || dragging === target) return;
     const next = order.filter((s) => s !== dragging);
     next.splice(next.indexOf(target), 0, dragging);
+    save(next);
+  }
+
+  function up(symbol: string) {
+    const at = order.indexOf(symbol);
+    if (at < 1) return;
+    const next = [...order];
+    [next[at - 1], next[at]] = [next[at], next[at - 1]];
+    save(next);
+  }
+
+  function save(next: string[]) {
+    if (!list) return;
     lists.mutate(lists.data?.map((w) => (w.id === list.id ? { ...w, symbols: next } : w)), { revalidate: false });
     run(send(`/api/watchlists/${list.id}/order`, "PUT", { symbols: next }));
   }
@@ -78,6 +91,7 @@ export function WatchlistPanel({ selected, onSelect }: { selected?: string; onSe
           <div key={q.symbol} style={{ position: "relative" }} className="wl">
             <QuoteRow q={q} selected={q.symbol === selected} draggable pick={onSelect ?? ((s) => router.push(symbolHref(s)))}
               onDragStart={() => setDragging(q.symbol)} onDragOver={(e) => e.preventDefault()} onDrop={() => drop(q.symbol)} onDragEnd={() => setDragging(null)} style={{ opacity: dragging === q.symbol ? 0.4 : 1 }} />
+            <button className="wl-x wl-up" aria-label={`Move ${q.symbol} up`} onClick={() => up(q.symbol)}>↑</button>
             <button className="wl-x" aria-label={`Remove ${q.symbol}`} onClick={() => list && run(send(`/api/watchlists/${list.id}/items/${encodeURIComponent(q.symbol)}`, "DELETE"))}>×</button>
           </div>
         ))}
@@ -89,14 +103,15 @@ export function WatchlistPanel({ selected, onSelect }: { selected?: string; onSe
 
 export function NewsPanel({ q, hideEmpty }: { q?: string; hideEmpty?: boolean }) {
   const [tier, setTier] = useState("");
+  const [text, setText] = useState("");
   const params = new URLSearchParams();
   if (tier) params.set("tier", tier);
-  if (q) params.set("q", q);
+  if (q || text.trim()) params.set("q", text.trim() || q!);
   const { data, error, isLoading } = useEnvelope<NewsRow[]>(`/api/news?${params}`, { refreshInterval: 900_000 });
   if (hideEmpty && data && !data.data.length) return null;
   return (
-    <Panel title="News" meta={data?.meta} style={{ height: "100%" }} actions={<select className="input" aria-label="Filter news" value={tier} onChange={(e) => setTier(e.target.value)}><option value="">All</option><option value="official">Official</option><option value="media">Media</option></select>}>
-      <State loading={isLoading} error={error} empty={!data?.data.length}>
+    <Panel title="News" meta={data?.meta} style={{ height: "100%" }} actions={<><input className="input" style={{ width: 120 }} placeholder="Filter" aria-label="Filter headlines" value={text} onChange={(e) => setText(e.target.value)} /><select className="input" aria-label="Filter news" value={tier} onChange={(e) => setTier(e.target.value)}><option value="">All</option><option value="official">Official</option><option value="media">Media</option></select></>}>
+      <State loading={isLoading && !data} error={error} empty={!data?.data.length}>
         {data?.data.map((n) => (
           <a key={n.url} href={n.url} target="_blank" rel="noreferrer noopener" style={{ display: "block", padding: "10px 20px", borderTop: "1px solid var(--line)" }}>
             <div style={{ fontWeight: 500, letterSpacing: "-0.01em" }}>{n.title}</div>

@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from defusedxml import ElementTree
 
 from atlas.config import get_settings
-from atlas.core.errors import SourceUnavailable
+from atlas.core.errors import NotCovered, SourceUnavailable
 from atlas.core.fetcher import get_fetcher
 from atlas.core.reference import LARGE_CAPS
 
@@ -152,7 +152,7 @@ async def resolve(ticker: str) -> dict:
     match = table.get(ticker) or table.get(ticker.replace("-", ".")) or table.get(ticker.replace(".", "-"))
     if not match:
         hint = "" if get_settings().sec_contact.strip() else " Set ATLAS_SEC_CONTACT to look up every SEC filer."
-        raise SourceUnavailable("sec", f"{ticker} is not in the available SEC ticker list.{hint}")
+        raise NotCovered("sec", f"{ticker} is not in the available SEC ticker list.{hint}")
     return {"ticker": ticker, **match}
 
 

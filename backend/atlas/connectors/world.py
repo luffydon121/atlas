@@ -10,7 +10,7 @@ import numpy as np
 from atlas.connectors.econ import remember
 from atlas.core.errors import SourceUnavailable
 from atlas.core.fetcher import get_fetcher
-from atlas.core.reference import AIRPORTS, CHOKEPOINTS, COMMODITY_TICKERS, WEATHER_REGIONS
+from atlas.core.reference import AIRPORTS, CHOKEPOINTS, COMMODITY_TICKERS, GROWING_MONTHS, WEATHER_REGIONS
 
 # -- Weather ---------------------------------------------------------------------------------------------
 
@@ -91,9 +91,12 @@ async def region_risk(commodity: str, region: tuple) -> dict:
     stats = anomaly_stats(daily["time"], daily["precipitation_sum"], daily["temperature_2m_mean"], end)
     fc = (await forecast(lat, lon))["daily"]
     mins, maxs = fc["temperature_2m_min"], fc["temperature_2m_max"]
-    flags = {"frost_days": sum(1 for t in mins if t is not None and t <= 1) if commodity in {"coffee", "wheat", "soybeans", "corn"} else 0,
-             "heat_days": sum(1 for t in maxs if t is not None and t >= 38) if commodity != "natural_gas" else 0}
-    return {"region": name, "lat": lat, "lon": lon, "production_weight": weight, "stats": stats, "forecast": flags, "risk": risk_label(stats, flags)}
+    months = GROWING_MONTHS.get((commodity, name))
+    in_season = months is None or date.today().month in months
+    flags = {"frost_days": sum(1 for t in mins if t is not None and t <= 1) if in_season and commodity in {"coffee", "wheat", "soybeans", "corn"} else 0,
+             "heat_days": sum(1 for t in maxs if t is not None and t >= 38) if in_season and commodity != "natural_gas" else 0}
+    risk = risk_label(stats, flags) if in_season else {"level": "normal", "drivers": ["Outside the main growing season"], "score": 0}
+    return {"region": name, "lat": lat, "lon": lon, "production_weight": weight, "stats": stats, "forecast": flags, "risk": risk, "in_season": in_season}
 
 
 async def commodity_risk(commodity: str) -> dict:

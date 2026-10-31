@@ -41,7 +41,10 @@
 
 ## App
 
-- Designed for desktop. Narrow windows collapse the sidebar, but dense tables need horizontal scrolling.
+- Dense tables scroll sideways inside their card on phones.
+- Drag to reorder needs a mouse. Touchscreens use the arrow buttons instead.
+- Phone access over Wi-Fi uses plain HTTP and needs the Mac awake and running. It does not work away from your network.
+- The passcode has a short delay after a wrong attempt but no lockout.
 - Customisation means reordering and hiding Today cards and resizing Workspace panels. There is no free-form widget grid.
 - Prices are delayed quotes, so "live" movement outside crypto depends on the provider.
 - There is no database migration tool yet.

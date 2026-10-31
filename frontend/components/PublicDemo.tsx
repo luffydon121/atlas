@@ -1,6 +1,6 @@
 "use client";
 import { usePathname } from "next/navigation";
-const disabled = new Set(["/portfolio", "/alerts", "/settings", "/quant", "/satellite", "/workspace"]);
+const disabled = new Set(["/portfolio", "/alerts", "/settings", "/quant", "/satellite", "/workspace", "/events", "/holdings"]);
 export function PublicDemo({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   if (process.env.NEXT_PUBLIC_ATLAS_READ_ONLY !== "true") return <>{children}</>;

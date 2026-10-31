@@ -5,8 +5,8 @@ import { useState } from "react";
 import { EChart, SERIES, axisBase, legend, tooltip } from "@/components/EChart";
 import { PriceChart } from "@/components/PriceChart";
 import { Panel, Stat, State, Toggle } from "@/components/ui";
-import { NewsPanel } from "@/components/widgets";
-import { get, send, useEnvelope, type Envelope } from "@/lib/api";
+import { NewsPanel, type Quote } from "@/components/widgets";
+import { type ApiError, get, send, useEnvelope, type Envelope } from "@/lib/api";
 import { compact, num, pct, ratioPct, tone } from "@/lib/format";
 
 type Row = Record<string, number | string | null>;
@@ -68,6 +68,24 @@ function Compare({ ticker }: { ticker: string }) {
   );
 }
 
+function GlobalProfile({ ticker, detail }: { ticker: string; detail: string }) {
+  const { data, error, isLoading } = useEnvelope<{ quotes: (Quote & { high_52w?: number; low_52w?: number; exchange?: string })[] }>(`/api/market/quotes?symbols=${encodeURIComponent(ticker)}`);
+  const q = data?.data.quotes[0];
+  return (
+    <State loading={isLoading && !data} error={error}>
+      {q ? <>
+        <div className="row"><b style={{ fontSize: 22, letterSpacing: "-0.02em" }}>{q.name ?? ticker}</b><span className="muted">{q.exchange}</span></div>
+        <section className="panel"><div className="stat-row">
+          <Stat k="Price" v={num(q.price)} s={<span className={tone(q.change_pct)}>{pct(q.change_pct)} · {q.freshness}</span>} /><Stat k="Currency" v={q.currency ?? "—"} /><Stat k="52-week high" v={num(q.high_52w)} /><Stat k="52-week low" v={num(q.low_52w)} /><Stat k="Volume" v={compact(q.volume)} />
+        </div></section>
+        <section className="panel chart-box tall"><PriceChart symbol={ticker} key={ticker} /></section>
+        <div className="notice" style={{ padding: 0 }}>Financial statements come from the US SEC, so they cover US-listed filers only.{detail.includes("ATLAS_SEC_CONTACT") ? " Add your SEC contact to .env to look up every US filer." : ""}</div>
+        <div style={{ maxHeight: 340, display: "flex", flexDirection: "column" }}><NewsPanel hideEmpty q={(q.name ?? ticker).split(" ")[0]} /></div>
+      </> : <div className="notice bad" role="alert">No market data found for {ticker}. Check the symbol. ASX shares end in .AX, such as BHP.AX.</div>}
+    </State>
+  );
+}
+
 export default function CompanyPage() {
   const params = useSearchParams();
   const router = useRouter();
@@ -75,8 +93,9 @@ export default function CompanyPage() {
   const [input, setInput] = useState(ticker);
   const [tab, setTab] = useState("Income");
   const { data, error, isLoading } = useEnvelope<Company>(`/api/company/${encodeURIComponent(ticker)}`);
-  const filings = useEnvelope<Filing[]>(`/api/company/${encodeURIComponent(ticker)}/filings`);
-  const insiders = useEnvelope<Insider>(`/api/company/${encodeURIComponent(ticker)}/insiders`);
+  const filings = useEnvelope<Filing[]>(data ? `/api/company/${encodeURIComponent(ticker)}/filings` : null);
+  const insiders = useEnvelope<Insider>(data ? `/api/company/${encodeURIComponent(ticker)}/insiders` : null);
+  const notCovered = (error as ApiError | undefined)?.status === 404;
   const [report, setReport] = useState<string | null>(null);
   const c = data?.data;
   const m = c?.multiples ?? {};
@@ -89,21 +108,22 @@ export default function CompanyPage() {
         {c && <><b style={{ fontSize: 22, marginLeft: 8, letterSpacing: "-0.02em" }}>{c.name}</b><span className="muted">{c.industry} · {c.exchanges?.join(", ")} · CIK {c.cik}</span>
           <button type="button" className="btn" style={{ marginLeft: "auto" }} onClick={() => get(`/api/ai/report/${ticker}`).then((r) => setReport(r.markdown)).catch((e) => setReport(`Report unavailable: ${e.message}`))}>Research report</button></>}
       </form>
-      <State loading={isLoading} error={error}>
+      {notCovered && <GlobalProfile ticker={ticker} detail={error?.message ?? ""} />}
+      <State loading={isLoading && !data} error={notCovered ? undefined : error}>
         {c && <>
           {report && <Panel title="Research report" actions={<button className="btn" onClick={() => setReport(null)}>Close</button>}><pre className="notice" style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "inherit" }}>{report}</pre></Panel>}
-          <section className="panel"><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(118px, 1fr))" }}>
+          <section className="panel"><div className="stat-row">
             <Stat k="Price" v={num(c.quote?.price)} s={<span className={tone(c.quote?.change_pct)}>{pct(c.quote?.change_pct)} · {c.quote?.freshness}</span>} /><Stat k="Market cap" v={compact(m.market_cap, "$")} s={c.shares ? `shares ${c.shares.as_of}` : undefined} /><Stat k="EV" v={compact(m.enterprise_value, "$")} /><Stat k="P/E" v={num(m.pe, 1)} /><Stat k="P/S" v={num(m.ps, 1)} /><Stat k="P/B" v={num(m.pb, 1)} /><Stat k="EV/EBITDA" v={num(m.ev_ebitda, 1)} /><Stat k="FCF yield" v={ratioPct(m.fcf_yield)} /><Stat k="Dividend yield" v={ratioPct(m.dividend_yield, 2)} />
           </div></section>
           <div className="grid-2">
-            <section className="panel" style={{ height: 340 }}><PriceChart symbol={ticker} compact key={ticker} /></section>
-            <Panel title="Revenue and net income" meta={data?.meta} style={{ height: 340 }}>
+            <section className="panel chart-box"><PriceChart symbol={ticker} compact key={ticker} /></section>
+            <Panel title="Revenue and net income" meta={data?.meta} className="chart-box">
               <EChart height={300} option={{ color: SERIES, tooltip, legend, xAxis: { type: "category", data: periods.map((p) => String(p.period_end).slice(0, 4)), ...axisBase, splitLine: { show: false } }, yAxis: { type: "value", ...axisBase, axisLabel: { ...axisBase.axisLabel, formatter: (v: number) => compact(v) } },
                 series: [["Revenue", "revenue"], ["Net income", "net_income"]].map(([name, k]) => ({ name, type: "bar", barGap: "10%", barMaxWidth: 16, itemStyle: { borderRadius: [2, 2, 0, 0] }, data: periods.map((p) => p[k]) })) }} />
             </Panel>
           </div>
           <Panel title="Financial statements" csv={`${ticker}-statements`} actions={<Toggle value={tab} options={[...Object.keys(STATEMENTS), "Ratios"]} onChange={setTab} />}>
-            <table className="t mono">
+            <table className="t mono sticky">
               <thead><tr><th>Fiscal year end</th>{periods.map((p) => <th key={String(p.period_end)}>{String(p.period_end)}</th>)}</tr></thead>
               <tbody>
                 {tab === "Ratios" ? RATIOS.map(([k, l, f]) => <tr key={k}><td className="ink2">{l}</td>{c.ratios.map((r, i) => <td key={i}>{f(r[k] as number | null)}</td>)}</tr>)
