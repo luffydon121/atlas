@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { get, send, useApi } from "@/lib/api";
 import { ago } from "@/lib/format";
-import { GROUPS, NAV } from "@/lib/nav";
+import { GROUPS, NAV, READ_ONLY, VISIBLE } from "@/lib/nav";
 import { applyTheme } from "@/lib/theme";
 import { Assistant } from "./Assistant";
 import { warm } from "./Providers";
@@ -46,10 +46,10 @@ function Spotlight({ onClose, onAsk }: { onClose: () => void; onAsk: (q: string)
     };
   }, [text]);
 
-  const pages = text ? NAV.filter((n) => n.label.toLowerCase().includes(text)).map((p) => ({ key: p.href, label: p.label, sub: p.desc, href: p.href })) : [];
+  const pages = text ? VISIBLE.filter((n) => n.label.toLowerCase().includes(text)).map((p) => ({ key: p.href, label: p.label, sub: p.desc, href: p.href })) : [];
   const symbols = text ? rows.map((r) => ({ key: r.symbol, label: `${r.symbol}  ${r.name}`, sub: `${r.type} ${r.exchange}`, href: destination(r) })) : [];
   const history = text ? [] : recent.map((r) => ({ ...r, key: r.href }));
-  const ask = /\s/.test(text) || text.endsWith("?") ? [{ key: "ask", label: `Ask the assistant: ${q.trim()}`, sub: "Cited answer", href: "" }] : [];
+  const ask = !READ_ONLY && (/\s/.test(text) || text.endsWith("?")) ? [{ key: "ask", label: `Ask the assistant: ${q.trim()}`, sub: "Cited answer", href: "" }] : [];
   const items = [...pages, ...symbols, ...history, ...ask];
 
   function go(item: (typeof items)[number]) {
@@ -101,7 +101,7 @@ function Bell() {
 }
 
 function Shortcuts({ onClose }: { onClose: () => void }) {
-  const rows = [["⌘K or /", "Search"], ["⌘J", "Assistant"], ["?", "This list"], ["Esc", "Close"], ...NAV.map((n) => [`g ${n.key}`, n.label])];
+  const rows = [["⌘K or /", "Search"], ["⌘J", "Assistant"], ["?", "This list"], ["Esc", "Close"], ...VISIBLE.map((n) => [`g ${n.key}`, n.label])];
   return (
     <div className="spot-wrap" onClick={onClose}>
       <div className="spot" role="dialog" aria-label="Keyboard shortcuts" onClick={(e) => e.stopPropagation()}>
@@ -154,13 +154,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const onKey = useCallback((e: KeyboardEvent) => {
     const typing = /INPUT|TEXTAREA|SELECT/.test((e.target as HTMLElement).tagName);
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setSearch((v) => !v); return; }
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") { e.preventDefault(); setAi((v) => !v); return; }
+    if (!READ_ONLY && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") { e.preventDefault(); setAi((v) => !v); return; }
     if (e.key === "Escape") { setFly(null); setHelp(false); return; }
     if (typing || e.metaKey || e.ctrlKey) return;
     if (e.key === "/") { e.preventDefault(); setSearch(true); return; }
     if (e.key === "?") { setHelp((v) => !v); return; }
     if (Date.now() - prefix.current < 900) {
-      const hit = NAV.find((n) => n.key === e.key);
+      const hit = VISIBLE.find((n) => n.key === e.key);
       if (hit) router.push(hit.href);
       prefix.current = 0;
     } else if (e.key === "g") prefix.current = Date.now();
@@ -171,7 +171,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onKey]);
 
-  const items = NAV.filter((n) => n.group === fly);
+  const items = VISIBLE.filter((n) => n.group === fly);
   if (path === "/unlock") return <main>{children}</main>;
   return (
     <>
@@ -182,18 +182,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <nav aria-label="Modules" className={`gnav-links ${menu ? "open" : ""}`} onClick={() => setMenu(false)}>
             <Link href="/" className={`gnav-link ${path === "/" ? "on" : ""}`} onMouseEnter={() => hover(null)}>Today</Link>
             {GROUPS.map((g) => menu ? (
-              <div key={g} style={{ margin: "10px 0" }}><div className="muted" style={{ fontSize: 12 }}>{g}</div>{NAV.filter((n) => n.group === g).map((n) => <Link key={n.href} href={n.href} style={{ display: "block", padding: "5px 0", fontSize: 19, fontWeight: 600 }}>{n.label}</Link>)}</div>
+              <div key={g} style={{ margin: "10px 0" }}><div className="muted" style={{ fontSize: 12 }}>{g}</div>{VISIBLE.filter((n) => n.group === g).map((n) => <Link key={n.href} href={n.href} style={{ display: "block", padding: "5px 0", fontSize: 19, fontWeight: 600 }}>{n.label}</Link>)}</div>
             ) : (
-              <Link key={g} href={NAV.find((n) => n.group === g)!.href} className={`gnav-link ${page?.group === g ? "on" : ""}`} onMouseEnter={() => hover(g)} onFocus={() => hover(g)}>{g}</Link>
+              <Link key={g} href={VISIBLE.find((n) => n.group === g)!.href} className={`gnav-link ${page?.group === g ? "on" : ""}`} onMouseEnter={() => hover(g)} onFocus={() => hover(g)}>{g}</Link>
             ))}
-            {menu ? <div style={{ margin: "10px 0" }}><div className="muted" style={{ fontSize: 12 }}>System</div>{NAV.filter((n) => n.group === "System").map((n) => <Link key={n.href} href={n.href} style={{ display: "block", padding: "5px 0", fontSize: 19, fontWeight: 600 }}>{n.label}</Link>)}</div>
+            {menu ? <div style={{ margin: "10px 0" }}><div className="muted" style={{ fontSize: 12 }}>System</div>{VISIBLE.filter((n) => n.group === "System").map((n) => <Link key={n.href} href={n.href} style={{ display: "block", padding: "5px 0", fontSize: 19, fontWeight: 600 }}>{n.label}</Link>)}</div>
               : <Link href="/quality" className={`gnav-link ${page?.group === "System" ? "on" : ""}`} onMouseEnter={() => hover("System")}>System</Link>}
           </nav>
           <div className="gnav-right">
             <button className="icon-btn" aria-label="Search" onClick={() => setSearch(true)}>{Icon.search}</button>
-            <Bell />
+            {!READ_ONLY && <Bell />}
             <button className="icon-btn" aria-label="Switch theme" onClick={() => applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark")}><span className="only-dark">{Icon.sun}</span><span className="only-light">{Icon.moon}</span></button>
-            <button className="icon-btn" aria-label="Assistant" onClick={() => setAi(!ai)}>{Icon.spark}</button>
+            {!READ_ONLY && <button className="icon-btn" aria-label="Assistant" onClick={() => setAi(!ai)}>{Icon.spark}</button>}
           </div>
         </div>
         {fly && items.length > 0 && <div className="flyout" onMouseEnter={() => clearTimeout(flyTimer.current)} onClick={() => setFly(null)}>
@@ -202,6 +202,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </div>
         </div>}
       </header>
+      {READ_ONLY && <div className="demo-note" role="status">Public demo. Read-only, with delayed data. Personal tools run on your own computer.</div>}
       {fly && <div className="scrim" onMouseEnter={() => setFly(null)} />}
       {page && !FullBleed(path) && <div className="hero" key={`hero:${path}`}><h1>{page.tagline}</h1></div>}
       <Offline />

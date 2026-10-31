@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Fresh, Panel, Skeleton, Sparkline, Status } from "@/components/ui";
 import { ChangePill, NewsPanel, type Quote, QuoteRow, symbolHref } from "@/components/widgets";
 import { get, send, useEnvelope } from "@/lib/api";
+import { READ_ONLY } from "@/lib/nav";
 import { ago, num } from "@/lib/format";
 
 type Signal = { severity: string; area: string; title: string; detail: string; href: string };
@@ -12,7 +13,7 @@ type Event = { date: string; title: string; region: string; confirmed: boolean }
 type Today = { date: string; headline: string; markets: Quote[]; watchlist: Quote[]; signals: Signal[]; events: Event[]; sentiment: { value: number; label: string } | null; alerts: { title: string; body: string }[] };
 
 const TILES: Record<string, { label: string; span: number }> = {
-  signals: { label: "Worth a look", span: 5 }, watchlist: { label: "Movers in your watchlist", span: 4 }, events: { label: "Coming up", span: 3 }, news: { label: "News", span: 8 }, sentiment: { label: "Crypto mood", span: 4 },
+  signals: { label: "Worth a look", span: 5 }, watchlist: { label: READ_ONLY ? "Biggest movers" : "Movers in your watchlist", span: 4 }, events: { label: "Coming up", span: 3 }, news: { label: "News", span: 8 }, sentiment: { label: "Crypto mood", span: 4 },
 };
 const DEFAULT_ORDER = Object.keys(TILES);
 const LEAD = ["^GSPC", "^IXIC", "^AXJO", "CL=F", "GC=F", "BTC-USD"];
@@ -52,6 +53,7 @@ export default function TodayPage() {
   const d = data?.data;
 
   useEffect(() => {
+    if (READ_ONLY) return;
     get("/api/layouts/today").then((r) => { if (r?.spec?.order) setLayout({ hidden: [], ...r.spec }); }).catch(() => {}).finally(() => { loaded.current = true; });
   }, []);
 
@@ -98,7 +100,7 @@ export default function TodayPage() {
       <div className="today-hero">
         <small>{today}</small>
         {error ? <h1 style={{ color: "var(--ink)", background: "none" }}>Markets are unavailable right now.</h1> : <h1>{d?.headline ?? " "}</h1>}
-        <div className="row" style={{ marginTop: 16 }}><Fresh meta={data?.meta} />{data?.meta.fetched_at && <span className="muted" style={{ fontSize: 12 }}>Updated {ago(data.meta.fetched_at)}</span>}<span style={{ flex: 1 }} /><button className={`btn ${editing ? "on" : ""}`} onClick={() => setEditing(!editing)}>{editing ? "Done" : "Edit"}</button></div>
+        <div className="row" style={{ marginTop: 16 }}><Fresh meta={data?.meta} />{data?.meta.fetched_at && <span className="muted" style={{ fontSize: 12 }}>Updated {ago(data.meta.fetched_at)}</span>}<span style={{ flex: 1 }} />{!READ_ONLY && <button className={`btn ${editing ? "on" : ""}`} onClick={() => setEditing(!editing)}>{editing ? "Done" : "Edit"}</button>}</div>
       </div>
       <div className="page">
         <div className="bento">

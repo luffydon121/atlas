@@ -101,6 +101,15 @@ export function WatchlistPanel({ selected, onSelect }: { selected?: string; onSe
   );
 }
 
+export function MarketsPanel({ selected, onSelect }: { selected?: string; onSelect: (s: string) => void }) {
+  const { data, error, isLoading } = useEnvelope<Record<string, Quote[]>>("/api/market/overview", { refreshInterval: 120_000 });
+  return (
+    <Panel title="Markets" meta={data?.meta} style={{ height: "100%" }}>
+      <State loading={isLoading && !data} error={error}><QuoteTable rows={[...(data?.data.indices ?? []), ...(data?.data.commodities ?? []).slice(0, 5)]} selected={selected} onSelect={onSelect} /></State>
+    </Panel>
+  );
+}
+
 export function NewsPanel({ q, hideEmpty }: { q?: string; hideEmpty?: boolean }) {
   const [tier, setTier] = useState("");
   const [text, setText] = useState("");

@@ -3,23 +3,30 @@
 import asyncio
 import functools
 import time
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 _stores: list[dict] = []
 
 
-def memo(ttl: float) -> Callable:
-    """Caches an async function by its arguments. Old values are served while a refresh runs."""
+def memo(ttl: float, maxsize: int = 32) -> Callable:
+    """Caches an async function by its arguments. Old values are served while a refresh runs.
+
+    The oldest entries are dropped past `maxsize`, so a public site cannot grow without limit.
+    """
 
     def wrap(fn: Callable[..., Awaitable[Any]]) -> Callable:
-        store: dict[tuple, tuple[float, Any]] = {}
+        store: OrderedDict[tuple, tuple[float, Any]] = OrderedDict()
         running: dict[tuple, asyncio.Task] = {}
         _stores.append(store)
 
         async def refresh(key: tuple, args: tuple, kwargs: dict) -> Any:
             value = await fn(*args, **kwargs)
             store[key] = (time.monotonic() + ttl, value)
+            store.move_to_end(key)
+            while len(store) > maxsize:
+                store.popitem(last=False)
             return value
 
         @functools.wraps(fn)
@@ -27,6 +34,7 @@ def memo(ttl: float) -> Callable:
             key = (args, tuple(sorted(kwargs.items())))
             hit = store.get(key)
             if hit and hit[0] > time.monotonic():
+                store.move_to_end(key)
                 return hit[1]
             task = running.get(key)
             if task is None or task.done() or task.get_loop() is not asyncio.get_running_loop():

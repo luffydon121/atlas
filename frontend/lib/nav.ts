@@ -27,4 +27,7 @@ export const NAV: NavItem[] = [
   { href: "/settings", label: "Settings", key: "x", group: "System", tagline: "Make it yours.", desc: "Keys, documents and appearance" },
 ];
 
-export const GROUPS = ["Intelligence", "Markets", "Economy", "World", "Research"] as const;
+export const READ_ONLY = process.env.NEXT_PUBLIC_ATLAS_READ_ONLY === "true";
+export const PERSONAL = new Set(["/portfolio", "/alerts", "/settings", "/quant", "/satellite", "/workspace", "/events", "/holdings"]);
+export const VISIBLE = READ_ONLY ? NAV.filter((n) => !PERSONAL.has(n.href)) : NAV;
+export const GROUPS = ["Intelligence", "Markets", "Economy", "World", "Research"].filter((g) => VISIBLE.some((n) => n.group === g));

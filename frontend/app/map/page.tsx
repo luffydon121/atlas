@@ -7,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { get, send, type Envelope, useApi, useEnvelope } from "@/lib/api";
 import { daysAgo } from "@/lib/format";
+import { READ_ONLY } from "@/lib/nav";
 import { useTheme } from "@/lib/theme";
 
 type Layer = { id: string; label: string; group: string; source: string; freshness: string };
@@ -185,7 +186,7 @@ export default function WorldMap() {
     }).catch(() => {});
   }, [ready, focus]);
 
-  const views = useApi<{ spec: Record<string, View> | null }>("/api/layouts/map-views");
+  const views = useApi<{ spec: Record<string, View> | null }>(READ_ONLY ? null : "/api/layouts/map-views");
   const saveView = () => {
     const m = map.current;
     const name = viewName.trim();
@@ -230,7 +231,7 @@ export default function WorldMap() {
           </div>
         ))}
         {on.includes("geopolitics") && <label className="row muted" style={{ marginBottom: 8 }}>Event tier<select className="input" value={tier} onChange={(e) => setTier(e.target.value)}><option value="all">All</option><option value="official">Official</option><option value="automated">Automated</option></select></label>}
-        {!views.error && <><div className="muted" style={{ fontSize: 12, fontWeight: 600, margin: "4px 0 2px" }}>Saved views</div>
+        {!READ_ONLY && !views.error && <><div className="muted" style={{ fontSize: 12, fontWeight: 600, margin: "4px 0 2px" }}>Saved views</div>
           <div className="row" style={{ marginBottom: 8 }}>
             {Object.keys(views.data?.spec ?? {}).map((n) => <button key={n} className="btn" onClick={() => openView(n)}>{n}</button>)}
             <input className="input" style={{ flex: 1, minWidth: 90 }} aria-label="View name" placeholder="Name" value={viewName} onChange={(e) => setViewName(e.target.value)} /><button className="btn" disabled={!viewName.trim()} onClick={saveView}>Save</button>

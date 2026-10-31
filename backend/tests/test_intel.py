@@ -237,3 +237,42 @@ async def test_assistant_uses_exposures_and_events():
     r.evidence.extend(assistant._exposure_ev(themes))
     assert any("not a forecast" in " ".join(e.facts) for e in r.evidence)
     assert "Hormuz" in " ".join(assistant._events_ev().facts)
+
+
+async def test_memo_drops_oldest_entries():
+    from atlas.core.memo import memo
+
+    @memo(60, maxsize=2)
+    async def double(x):
+        calls.append(x)
+        return x * 2
+
+    calls = []
+    for x in (1, 2, 3):
+        await double(x)
+    await double(3)
+    assert calls == [1, 2, 3]
+    await double(1)
+    assert calls == [1, 2, 3, 1]
+
+
+async def test_slow_feed_does_not_hold_up_the_event_page(monkeypatch):
+    from atlas.connectors import calendar, world
+    from atlas.services import impact
+
+    async def fast(*_a, **_k):
+        return []
+
+    async def slow(*_a, **_k):
+        await asyncio.sleep(5)
+
+    for name in ("earthquakes", "tropical_storms", "natural_events", "federal_register"):
+        monkeypatch.setattr(world, name, fast)
+    monkeypatch.setattr(world, "gdelt_events", slow)
+
+    async def banks():
+        return [], []
+
+    monkeypatch.setattr(calendar, "central_banks", banks)
+    monkeypatch.setattr(impact, "FEED_BUDGET", 0.05)
+    assert (await impact.collect())["failed"] == ["GDELT"]

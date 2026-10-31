@@ -4,6 +4,7 @@ import { AreaSeries, CandlestickSeries, ColorType, createChart, CrosshairMode, H
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useEnvelope } from "@/lib/api";
 import { num } from "@/lib/format";
+import { READ_ONLY } from "@/lib/nav";
 import { useTheme } from "@/lib/theme";
 import { SymbolActions } from "./SymbolActions";
 import { Fresh, Skeleton, Toggle } from "./ui";
@@ -107,7 +108,7 @@ export function PriceChart({ symbol, defaultFrame = "1Y", compact = false }: { s
         <div className="row" style={{ justifyContent: "flex-end" }}>
           <Toggle value={frame} options={Object.keys(FRAMES) as Frame[]} onChange={setFrame} />
           {!compact && <Toggle value={style} options={["Line", "Candles"] as const} onChange={setStyle} />}
-          <SymbolActions symbol={symbol} price={last} />
+          {!READ_ONLY && <SymbolActions symbol={symbol} price={last} />}
           <button className="btn" onClick={() => setFull(!full)}>{full ? "Exit" : "Full screen"}</button>
         </div>
       </div>

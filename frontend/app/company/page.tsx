@@ -8,6 +8,7 @@ import { Panel, Stat, State, Toggle } from "@/components/ui";
 import { NewsPanel, type Quote } from "@/components/widgets";
 import { type ApiError, get, send, useEnvelope, type Envelope } from "@/lib/api";
 import { compact, num, pct, ratioPct, tone } from "@/lib/format";
+import { READ_ONLY } from "@/lib/nav";
 
 type Row = Record<string, number | string | null>;
 type Company = {
@@ -106,7 +107,7 @@ export default function CompanyPage() {
       <form className="row" onSubmit={(e) => { e.preventDefault(); router.push(`/company?t=${encodeURIComponent(input.trim().toUpperCase())}`); }}>
         <input className="input mono" aria-label="Ticker" value={input} onChange={(e) => setInput(e.target.value)} style={{ width: 110 }} /><button className="btn">Load</button>
         {c && <><b style={{ fontSize: 22, marginLeft: 8, letterSpacing: "-0.02em" }}>{c.name}</b><span className="muted">{c.industry} · {c.exchanges?.join(", ")} · CIK {c.cik}</span>
-          <button type="button" className="btn" style={{ marginLeft: "auto" }} onClick={() => get(`/api/ai/report/${ticker}`).then((r) => setReport(r.markdown)).catch((e) => setReport(`Report unavailable: ${e.message}`))}>Research report</button></>}
+          {!READ_ONLY && <button type="button" className="btn" style={{ marginLeft: "auto" }} onClick={() => get(`/api/ai/report/${ticker}`).then((r) => setReport(r.markdown)).catch((e) => setReport(`Report unavailable: ${e.message}`))}>Research report</button>}</>}
       </form>
       {notCovered && <GlobalProfile ticker={ticker} detail={error?.message ?? ""} />}
       <State loading={isLoading && !data} error={notCovered ? undefined : error}>
@@ -131,7 +132,7 @@ export default function CompanyPage() {
               </tbody>
             </table>
           </Panel>
-          <DcfPanel ticker={ticker} />
+          {!READ_ONLY && <DcfPanel ticker={ticker} />}
           <Compare ticker={ticker} />
           <div className="grid-3">
             <Panel title="Filings" meta={filings.data?.meta} style={{ height: 320 }}>

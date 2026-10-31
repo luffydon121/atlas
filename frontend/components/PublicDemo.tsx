@@ -1,8 +1,17 @@
 "use client";
+
+import Link from "next/link";
 import { usePathname } from "next/navigation";
-const disabled = new Set(["/portfolio", "/alerts", "/settings", "/quant", "/satellite", "/workspace", "/events", "/holdings"]);
+import { PERSONAL, READ_ONLY } from "@/lib/nav";
+
 export function PublicDemo({ children }: { children: React.ReactNode }) {
   const path = usePathname();
-  if (process.env.NEXT_PUBLIC_ATLAS_READ_ONLY !== "true") return <>{children}</>;
-  return <><div role="status" style={{padding:"12px 20px",background:"#172554",color:"white",fontSize:14}}>Public read-only demo · Saving, uploads, assistant and interactive calculations are disabled. Data may take a minute to load after inactivity.</div>{disabled.has(path) ? <section style={{padding:40}}><h1>Available in the personal edition</h1><p>This free public demo lets you explore market and world data. Personal records and interactive tools are disabled.</p><a href="/markets">Explore markets →</a></section> : children}</>;
+  if (!READ_ONLY || !PERSONAL.has(path)) return <>{children}</>;
+  return (
+    <div className="hero">
+      <h1>Available in the personal edition.</h1>
+      <p>This public demo explores market and world data. Personal records and interactive tools run on your own computer.</p>
+      <div className="row" style={{ marginTop: 20 }}><Link className="btn on" href="/markets">Explore markets</Link></div>
+    </div>
+  );
 }

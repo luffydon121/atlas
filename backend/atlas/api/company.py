@@ -13,13 +13,18 @@ from atlas.services import valuation
 router = APIRouter(prefix="/api/company", tags=["company"])
 
 
-@memo(900)
+def _small(sub: dict) -> dict:
+    """The submissions file is large. Only what the pages read is kept in memory."""
+    return {k: v for k, v in sub.items() if k != "filings"} | {"filings": {"recent": sub.get("filings", {}).get("recent", {})}}
+
+
+@memo(900, maxsize=12)
 async def _load(ticker: str) -> dict:
     info = await sec.resolve(ticker)
     facts_got, sub_got = await asyncio.gather(sec.company_facts(info["cik"]), sec.submissions(info["cik"]))
     facts, sub = facts_got.json(), sub_got.json()
     annual = sec.build_statements(facts)
-    return {"info": info, "facts": facts, "sub": sub, "annual": annual, "ratios": sec.ratios(annual), "fetched": facts_got.fetched_at, "stale": facts_got.stale}
+    return {"info": info, "shares": sec.shares_outstanding(facts), "sub": _small(sub), "annual": annual, "ratios": sec.ratios(annual), "fetched": facts_got.fetched_at, "stale": facts_got.stale}
 
 
 def _multiples(price: float | None, shares: dict | None, annual: list[dict], ratios: list[dict]) -> dict:
@@ -48,7 +53,7 @@ async def overview(ticker: Symbol):
         quote = await yahoo.quote_for(ticker)
     except SourceUnavailable:
         quote = None
-    shares = sec.shares_outstanding(data["facts"])
+    shares = data["shares"]
     parsed = None
     try:
         parsed = await yahoo.chart(ticker, "10y", "1mo")
@@ -105,7 +110,7 @@ async def compare(tickers: SymbolList):
         price = None if isinstance(q, Exception) else q["price"]
         rows.append({"ticker": name, "available": True, "name": res["sub"].get("name"), "period_end": last["period_end"], "revenue": last.get("revenue"), "net_income": last.get("net_income"),
                      **{k: ratio.get(k) for k in ("revenue_growth", "net_margin", "operating_margin", "gross_margin", "roe", "debt_to_equity", "free_cash_flow")},
-                     **_multiples(price, sec.shares_outstanding(res["facts"]), res["annual"], res["ratios"])})
+                     **_multiples(price, res["shares"], res["annual"], res["ratios"])})
     return envelope(rows, source=["sec", "yahoo"], freshness=Freshness.HISTORICAL)
 
 
@@ -126,7 +131,7 @@ async def run_dcf(body: DcfBody):
     if body.ticker:
         data = await _load(body.ticker.upper())
         last, ratio = data["annual"][-1], data["ratios"][-1]
-        share_row = sec.shares_outstanding(data["facts"])
+        share_row = data["shares"]
         if base is None:
             base = ratio.get("free_cash_flow")
             assumed.append(f"Base free cash flow from fiscal {last['period_end']} filing")

@@ -10,6 +10,7 @@ from atlas.connectors import calendar, holdings, sec, trade, world
 from atlas.core import reference as ref
 from atlas.core.envelope import Freshness, envelope
 from atlas.core.errors import SourceNotConfigured
+from atlas.core.memo import memo
 from atlas.db import MonitoringArea, get_db
 from atlas.services import reports, satellite, satellite_monitor
 
@@ -173,9 +174,14 @@ def list_briefings():
     return reports.recent()
 
 
+@memo(600, maxsize=1)
+async def _unsaved_briefing() -> dict:
+    return await reports.generate("daily", save=False)
+
+
 @router.get("/briefings/latest")
 async def latest_briefing():
-    found = reports.latest() or await reports.generate("daily", save=not reports.read_only())
+    found = await _unsaved_briefing() if reports.read_only() else reports.latest() or await reports.generate("daily")
     return envelope(found, source="atlas", freshness=Freshness.DELAYED, note="Written from retrieved data by fixed rules. Unavailable feeds are listed in the briefing.")
 
 

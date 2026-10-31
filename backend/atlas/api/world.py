@@ -70,7 +70,8 @@ def _start_warmup() -> None:
 
 @router.get("/map/layers")
 def layers():
-    return envelope(LAYERS, source="atlas", freshness=Freshness.REFERENCE)
+    rows = [r for r in LAYERS if r["id"] != "monitoring"] if get_settings().public_read_only else LAYERS
+    return envelope(rows, source="atlas", freshness=Freshness.REFERENCE)
 
 
 async def _events() -> tuple[list[dict], list[str]]:

@@ -21,6 +21,7 @@ SEVERITY = ["info", "watch", "elevated", "severe"]
 CATEGORIES = {"extreme_weather": "Extreme weather", "natural_disaster": "Natural disaster", "wildfire": "Wildfire", "shipping": "Shipping", "agriculture": "Crop risk", "central_bank": "Central bank", "inflation": "Inflation",
               "regulatory": "Regulation", "geopolitical": "Geopolitics", "energy": "Energy", "industrial": "Industry", "earnings": "Earnings"}
 NEAR_KM = 400
+FEED_BUDGET = 6
 OBSERVED = "Observed price moves since this reading. An ongoing condition may have started earlier, and moves may have other causes."
 HYPOTHESIS = "Exposures are hypotheses from documented geography and business lines, not forecasts."
 
@@ -159,12 +160,22 @@ def save(rows: list[dict]) -> int:
 async def collect() -> dict:
     """One failed feed never stops the others. Failures are reported, not hidden."""
     feeds = {"USGS": world.earthquakes(), "NOAA hurricanes": world.tropical_storms(), "NASA EONET": world.natural_events(), "Calendars": calendar.central_banks(), "Federal Register": world.federal_register(), "GDELT": world.gdelt_events()}
-    results = await asyncio.gather(*feeds.values(), return_exceptions=True)
-    got = dict(zip(feeds, results, strict=True))
-    failed = [k for k, v in got.items() if isinstance(v, Exception)]
-    ok = lambda k: [] if isinstance(got[k], Exception) else got[k]  # noqa: E731
+    if not world.LATEST_CHOKEPOINTS:
+        await world.chokepoints_ready(0.01)
+    tasks = {name: asyncio.ensure_future(coro) for name, coro in feeds.items()}
+    await asyncio.wait(tasks.values(), timeout=FEED_BUDGET)
+    got: dict[str, object] = {}
+    for name, task in tasks.items():
+        if not task.done():
+            # A slow feed keeps running and fills the cache for the next collection.
+            task.add_done_callback(lambda t: t.cancelled() or t.exception())
+            got[name] = TimeoutError(name)
+        else:
+            got[name] = task.exception() or task.result()
+    failed = [k for k, v in got.items() if isinstance(v, BaseException)]
+    ok = lambda k: [] if isinstance(got[k], BaseException) else got[k]  # noqa: E731
     rows = from_quakes(ok("USGS")) + from_storms(ok("NOAA hurricanes")) + from_natural(ok("NASA EONET")) + from_register(ok("Federal Register")) + from_news(ok("GDELT"))
-    if not isinstance(got["Calendars"], Exception):
+    if not isinstance(got["Calendars"], BaseException):
         rows += from_calendar(got["Calendars"][0], date.today())
     rows += from_chokepoints(list(world.LATEST_CHOKEPOINTS.values())) + from_weather(world.LATEST_RISK) + from_inflation()
     return {"added": save(rows), "seen": len(rows), "failed": failed}

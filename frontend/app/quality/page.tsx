@@ -3,6 +3,7 @@
 import { Panel, Stat, State, Status } from "@/components/ui";
 import { send, useApi, useEnvelope } from "@/lib/api";
 import { ago, compact, ratioPct } from "@/lib/format";
+import { READ_ONLY } from "@/lib/nav";
 
 type Row = { id: string; provider: string; domain: string; url: string; state: string; freshness: string; age_seconds: number | null; last_success: string | null; last_error: string | null; success_rate: number | null; reliability: string; licence: string; redistribution: string; limitations: string };
 type Quality = { summary: Record<string, number>; sources: Row[]; stale_after: string };
@@ -15,8 +16,8 @@ const every = (s: number) => (s >= 86400 ? `${Math.round(s / 86400)} d` : s >= 3
 
 export default function QualityPage() {
   const { data, error, isLoading } = useEnvelope<Quality>("/api/quality", { refreshInterval: 30_000 });
-  const jobs = useApi<Jobs>("/api/system/jobs", { refreshInterval: 15_000 });
-  const storage = useApi<Storage>("/api/system/storage");
+  const jobs = useApi<Jobs>(READ_ONLY ? null : "/api/system/jobs", { refreshInterval: 15_000 });
+  const storage = useApi<Storage>(READ_ONLY ? null : "/api/system/storage");
   const s = data?.data.summary;
   return (
     <div className="page">
@@ -27,7 +28,7 @@ export default function QualityPage() {
             <tbody>{data?.data.sources.map((r) => <tr key={r.id} title={r.last_error ?? r.licence}><td>{r.url ? <a href={r.url} target="_blank" rel="noreferrer noopener" style={{ textDecoration: "underline" }}>{r.provider}</a> : r.provider}</td><td className="l"><Status value={STATE[r.state] ?? "idle"} /></td><td className="l" style={{ textTransform: "capitalize" }}>{r.reliability}</td><td>{ago(r.last_success)}</td><td>{ratioPct(r.success_rate, 0)}</td><td className="wrap ink2">{r.redistribution}</td><td className="wrap ink2">{r.limitations}</td></tr>)}</tbody></table>
         </State>
       </Panel>
-      {!jobs.error && <Panel title="Background jobs" actions={jobs.data && !jobs.data.scheduler_running ? <span className="tag">Off</span> : undefined}>
+      {!READ_ONLY && !jobs.error && <Panel title="Background jobs" actions={jobs.data && !jobs.data.scheduler_running ? <span className="tag">Off</span> : undefined}>
         <table className="t sticky"><thead><tr><th>Job</th><th>Every</th><th className="l">Last</th><th>Started</th><th className="l">History</th><th /></tr></thead>
           <tbody>{jobs.data?.jobs.map((j) => <tr key={j.name} title={j.last_error ?? undefined}><td>{j.label}</td><td>{every(j.every_seconds)}</td><td className="l">{j.running ? "Running" : j.last_status ? <Status value={JOB[j.last_status] ?? "idle"} /> : "Not run"}</td><td>{ago(j.last_started)}</td><td className="l mono muted">{j.recent.map((r) => (r === "ok" ? "●" : "○")).join("")}</td><td><button className="btn" disabled={j.running || !jobs.data?.scheduler_running} onClick={() => send(`/api/system/jobs/${j.name}/run`, "POST").then(() => jobs.mutate()).catch(() => {})}>Run now</button></td></tr>)}</tbody></table>
       </Panel>}

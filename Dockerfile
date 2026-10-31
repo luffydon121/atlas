@@ -14,6 +14,6 @@ COPY backend/ ./backend/
 RUN pip install --no-cache-dir ./backend
 COPY --from=web /app/frontend ./frontend
 COPY scripts/host.sh ./scripts/host.sh
-ENV ATLAS_PUBLIC_READ_ONLY=true ATLAS_SCHEDULER_ENABLED=false ATLAS_DATA_DIR=/tmp/atlas-data NEXT_TELEMETRY_DISABLED=1 NODE_ENV=production PORT=10000
+ENV ATLAS_PUBLIC_READ_ONLY=true ATLAS_SCHEDULER_ENABLED=false ATLAS_DATA_DIR=/tmp/atlas-data NEXT_TELEMETRY_DISABLED=1 NODE_ENV=production PORT=10000 MALLOC_ARENA_MAX=2 NODE_OPTIONS=--max-old-space-size=180
 EXPOSE 10000
 CMD ["bash", "scripts/host.sh"]
