@@ -2,7 +2,7 @@
 
 A local-first financial and global intelligence app. It runs on your Mac, costs nothing to run, and labels every number with where it came from and how fresh it is.
 
-Version 2 adds an all-new interface with light and dark themes, a daily Today briefing, faster data, a calendar and more sources.
+Version 2.1 fits phones, tablets and large monitors, and adds phone access over Wi-Fi. Version 2 added an all-new interface with light and dark themes, a daily Today briefing, faster data, a calendar and more sources.
 
 ATLAS is a research tool. It is not investment advice and it never places real orders.
 
@@ -26,6 +26,16 @@ ATLAS opens at <http://127.0.0.1:3000>. Press Ctrl+C in the terminal to stop it.
 
 Market data loads in about a second, even on a first run. Shipping can take up to a minute the first time, and crop-weather baselines about 2 minutes, because those providers are slow or rate limited. Both fill in by themselves in the background.
 
+## Use it on your phone or tablet
+
+```bash
+./scripts/start.sh --lan
+```
+
+ATLAS prints an address and a passcode. Connect the phone to the same Wi-Fi, open the address, and enter the passcode. In Safari, Share then Add to Home Screen gives it an app icon. The Mac must stay on and running ATLAS.
+
+Without `--lan`, ATLAS stays private to your Mac. With it, anyone on your Wi-Fi can reach the passcode page, and traffic is not encrypted, so use it only on networks you trust. Set `ATLAS_PASSCODE` in `.env` to keep the same passcode between starts.
+
 ## Optional free setup
 
 ATLAS works with no keys. Edit `.env` and restart to unlock more.
@@ -46,11 +56,12 @@ Without Ollama the assistant still works. It shows the retrieved evidence with c
 | --- | --- |
 | Cmd+K or `/` | Search tickers, companies and pages. Long questions go to the assistant |
 | Cmd+J | Open the assistant |
+| `?` | Show every shortcut |
 | `g` then a letter | Jump to a page: d Today, m Markets, c Charts, r Companies, e Economy, w Map, q Quant, p Portfolio, a Alerts |
 
 On Today, press Edit to drag, hide or restore cards. Drag watchlist rows to reorder them. Workspace is the dense layout with resizable panels. Tables with an Export button download as CSV. Switch themes from the top bar, or choose Automatic in Settings.
 
-ASX symbols end in `.AX`, for example `BHP.AX`. Futures use Yahoo symbols such as `CL=F`.
+ASX symbols end in `.AX`, for example `BHP.AX`. Shares outside the US get a price page with chart, 52-week range and news; full statements cover SEC filers. On any chart, the star adds to your watchlist and Alert sets a price alert. Futures use Yahoo symbols such as `CL=F`.
 
 Portfolio CSV columns are `date, symbol, side, quantity, price`, with optional `fee, currency, note`. Side is one of buy, sell, dividend, deposit, withdraw.
 

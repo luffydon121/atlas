@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useEnvelope } from "@/lib/api";
 import { num } from "@/lib/format";
 import { useTheme } from "@/lib/theme";
+import { SymbolActions } from "./SymbolActions";
 import { Fresh, Skeleton, Toggle } from "./ui";
 
 const FRAMES = {
@@ -106,10 +107,11 @@ export function PriceChart({ symbol, defaultFrame = "1Y", compact = false }: { s
         <div className="row" style={{ justifyContent: "flex-end" }}>
           <Toggle value={frame} options={Object.keys(FRAMES) as Frame[]} onChange={setFrame} />
           {!compact && <Toggle value={style} options={["Line", "Candles"] as const} onChange={setStyle} />}
-          <button className="btn" aria-label="Toggle full screen" onClick={() => setFull(!full)}>{full ? "Exit" : "Full screen"}</button>
+          <SymbolActions symbol={symbol} price={last} />
+          <button className="btn" onClick={() => setFull(!full)}>{full ? "Exit" : "Full screen"}</button>
         </div>
       </div>
-      {!compact && <div className="row" style={{ padding: "2px 20px 6px" }}>
+      {!compact && <div className="row chips" style={{ padding: "2px 20px 6px" }}>
         <button className={`btn ${log ? "on" : ""}`} onClick={() => setLog(!log)}>Log</button>
         {daily && Object.keys(OVERLAYS).map((k) => <button key={k} className={`btn ${on.includes(k) ? "on" : ""}`} onClick={() => toggle(k)}>{k}</button>)}
         {daily && STUDIES.map((k) => <button key={k} className={`btn ${study === k ? "on" : ""}`} onClick={() => setStudy(study === k ? null : k)}>{k}</button>)}

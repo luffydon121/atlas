@@ -27,7 +27,10 @@ export function Assistant({ onClose, initial }: { onClose: () => void; initial?:
   const { data: status } = useApi<{ available: boolean; selected: string | null }>("/api/ai/status");
   const end = useRef<HTMLDivElement>(null);
 
-  useEffect(() => end.current?.scrollIntoView({ behavior: "smooth" }), [turns]);
+  useEffect(() => {
+    // Braces matter: newer Chrome returns a Promise here, and React would call it as a cleanup.
+    end.current?.scrollIntoView({ behavior: "smooth" });
+  }, [turns]);
   const asked = useRef(false);
   useEffect(() => {
     if (initial && !asked.current) {

@@ -31,10 +31,14 @@ def extract_pages(filename: str, raw: bytes) -> list[str]:
     if suffix not in ALLOWED:
         raise DocumentError(f"Unsupported file type. Allowed: {', '.join(sorted(ALLOWED))}")
     if suffix == ".pdf":
+        if not raw.startswith(b"%PDF-"):
+            raise DocumentError("That file is not a valid PDF")
         try:
             return [p.extract_text() or "" for p in PdfReader(io.BytesIO(raw)).pages]
         except (PyPdfError, ValueError, KeyError) as exc:
             raise DocumentError(f"Could not read PDF: {exc}") from exc
+    if b"\x00" in raw[:8192]:
+        raise DocumentError("That file looks binary, not text")
     try:
         return [raw.decode("utf-8")]
     except UnicodeDecodeError as exc:

@@ -31,5 +31,13 @@ function subscribe(callback: () => void) {
 
 export const useTheme = () => useSyncExternalStore(subscribe, () => document.documentElement.dataset.theme ?? "light", () => "light");
 
+function subscribeWidth(callback: () => void) {
+  const media = window.matchMedia("(max-width: 900px)");
+  media.addEventListener("change", callback);
+  return () => media.removeEventListener("change", callback);
+}
+
+export const useSmallScreen = () => useSyncExternalStore(subscribeWidth, () => window.matchMedia("(max-width: 900px)").matches, () => false);
+
 // Runs before first paint so the page never flashes the wrong theme.
 export const THEME_SCRIPT = `try{var c=localStorage.getItem("${KEY}")||"system";document.documentElement.dataset.theme=c==="dark"||(c==="system"&&matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light"}catch(e){document.documentElement.dataset.theme="light"}`;

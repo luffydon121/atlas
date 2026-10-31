@@ -85,12 +85,12 @@ export function Status({ value }: { value: string }) {
   return <span className="badge" style={{ color: "var(--ink-2)" }}><span style={{ color, fontSize: 9 }}>{icon}</span>{value.replace("_", " ")}</span>;
 }
 
-export function Sparkline({ data, up, width = 72, height = 30 }: { data?: number[]; up?: boolean; width?: number; height?: number }) {
+export function Sparkline({ data, up, width = 72, height = 30, fluid }: { data?: number[]; up?: boolean; width?: number; height?: number; fluid?: boolean }) {
   if (!data || data.length < 2) return <svg width={width} height={height} aria-hidden />;
   const lo = Math.min(...data), hi = Math.max(...data), span = hi - lo || 1;
   const pts = data.map((v, i) => `${((i / (data.length - 1)) * width).toFixed(1)},${(height - 2 - ((v - lo) / span) * (height - 4)).toFixed(1)}`);
   const color = up === undefined ? "var(--muted)" : up ? "var(--up-fill)" : "var(--down-fill)";
-  return <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden style={{ display: "block", overflow: "visible" }}><polyline points={pts.join(" ")} fill="none" stroke={color} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" /></svg>;
+  return <svg width={fluid ? "100%" : width} height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden style={{ display: "block", overflow: "visible" }}><polyline points={pts.join(" ")} fill="none" stroke={color} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" /></svg>;
 }
 
 export function Flash({ value, children }: { value: number | null | undefined; children: ReactNode }) {

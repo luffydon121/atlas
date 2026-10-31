@@ -105,8 +105,9 @@ async def chart(symbol: str, range_: str = "1y", interval: str = "1d", ttl: int 
     return parsed
 
 
-def _classify(symbol_type: str | None) -> Freshness:
-    return Freshness.LIVE if symbol_type == "CRYPTOCURRENCY" else Freshness.DELAYED
+def _classify(_symbol_type: str | None) -> Freshness:
+    # Cached for a minute or more, so even 24-hour crypto markets are delayed here.
+    return Freshness.DELAYED
 
 
 async def quote_for(symbol: str) -> dict:

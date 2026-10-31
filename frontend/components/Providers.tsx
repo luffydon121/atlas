@@ -10,7 +10,6 @@ const KEY = "atlas-swr-v3";
 const KEEP = /^\/api\/(today|market\/overview|market\/quotes|watchlists|calendar|news|crypto\/live)/;
 
 function cacheProvider() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const map = new Map<string, any>();
   if (typeof window === "undefined") return map;
   window.addEventListener("pagehide", () => {

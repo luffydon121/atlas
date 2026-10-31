@@ -10,12 +10,12 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, ORJSONResponse
 
-from atlas.api import company, econ, market, research, world
+from atlas.api import company, econ, market, research, system, world
 from atlas.config import get_settings
-from atlas.core.errors import SourceNotConfigured, SourceUnavailable
+from atlas.core.errors import NotCovered, SourceNotConfigured, SourceUnavailable
 from atlas.core.fetcher import get_fetcher, set_fetcher
 from atlas.db import init_db
-from atlas.services import scheduler
+from atlas.services import jobs, public_mode, scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -23,17 +23,20 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     init_db()
-    task = asyncio.create_task(scheduler.run()) if get_settings().scheduler_enabled else None
+    runner = scheduler.build() if get_settings().scheduler_enabled else None
+    task = asyncio.create_task(runner.run()) if runner else None
     yield
-    if task:
+    if runner:
+        await runner.stop()
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
+        jobs.set_runner(None)
     await get_fetcher().close()
     set_fetcher(None)
 
 
-app = FastAPI(title="ATLAS", version="2.0.0", lifespan=lifespan, default_response_class=ORJSONResponse)
+app = FastAPI(title="ATLAS", version="3.0.0", lifespan=lifespan, default_response_class=ORJSONResponse)
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 # Rejecting other Host headers stops a malicious web page from reaching this API by DNS rebinding.
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "testserver"])
@@ -42,20 +45,18 @@ app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000", "http
 
 @app.exception_handler(SourceUnavailable)
 async def source_unavailable(_request: Request, exc: SourceUnavailable) -> JSONResponse:
-    code = 424 if isinstance(exc, SourceNotConfigured) else 503
+    code = 424 if isinstance(exc, SourceNotConfigured) else 404 if isinstance(exc, NotCovered) else 503
     return JSONResponse(status_code=code, content={"detail": exc.reason, "source": exc.source, "freshness": "unavailable"})
-
-
-for module in (market, company, econ, world, research):
-    app.include_router(module.router)
 
 
 @app.middleware("http")
 async def public_read_only(request: Request, call_next):
     if get_settings().public_read_only:
-        if request.method not in {"GET", "HEAD", "OPTIONS"}:
-            return JSONResponse(status_code=403, content={"detail": "This public demo is read-only. Saving, uploads and interactive calculations are disabled."})
-        private_paths = ("/api/portfolios", "/api/documents", "/api/alerts", "/api/notifications", "/api/layouts", "/api/watchlists", "/api/ai")
-        if any(request.url.path == p or request.url.path.startswith(p + "/") for p in private_paths):
-            return JSONResponse(status_code=403, content={"detail": "Personal workspace features are unavailable in the public demo."})
+        blocked = public_mode.check(request.method, request.url.path, public_mode.client_id(request.headers, request.client.host if request.client else "unknown"))
+        if blocked:
+            return JSONResponse(status_code=blocked[0], content={"detail": blocked[1]})
     return await call_next(request)
+
+
+for module in (market, company, econ, world, research, system):
+    app.include_router(module.router)

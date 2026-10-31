@@ -22,7 +22,7 @@ export default function Crypto() {
   return (
     <div className="page">
       <div className="bento">{live.data?.data.map((c) => (
-        <section key={c.symbol} className="panel" style={{ "--span": 2 } as React.CSSProperties}><div className="tile-link market-tile" style={{ minHeight: 110 }}>
+        <section key={c.symbol} className="panel tile"><div className="tile-link market-tile" style={{ minHeight: 110 }}>
           <span className="name">{c.name}</span>
           <span><Flash value={c.price}><span className="price">{num(c.price, c.price < 10 ? 4 : 2)}</span></Flash><br /><ChangePill value={c.change_pct} /></span>
         </div></section>))}

@@ -62,6 +62,7 @@ export default function WorldMap() {
   const [offset, setOffset] = useState(2);
   const [playing, setPlaying] = useState(false);
   const [tier, setTier] = useState("all");
+  const [sheet, setSheet] = useState(false);
   const layers = useEnvelope<Layer[]>("/api/map/layers");
   const date = daysAgo(offset);
 
@@ -153,7 +154,8 @@ export default function WorldMap() {
   return (
     <div className="map-wrap">
       <div ref={host} style={{ position: "absolute", inset: 0 }} data-testid="world-map" data-ready={ready} />
-      <aside className="map-side" aria-label="Map layers">
+      <button className="btn on layers-btn" onClick={() => setSheet(!sheet)}>{sheet ? "Hide layers" : "Layers"}</button>
+      <aside className={`map-side ${sheet ? "open" : ""}`} aria-label="Map layers">
         <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", marginBottom: 10 }}>World map</div>
         {groups.map((g) => (
           <div key={g} style={{ marginBottom: 8 }}>

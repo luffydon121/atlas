@@ -80,13 +80,13 @@ async def layer(layer: str, west: float = Query(-180, ge=-180, le=180), south: f
     match layer:
         case "hazards_quakes":
             rows = await world.earthquakes()
-            return envelope(collection([point(q["lon"], q["lat"], **{k: v for k, v in q.items() if k not in ("lat", "lon")}) for q in rows]), source="usgs", freshness=Freshness.LIVE)
+            return envelope(collection([point(q["lon"], q["lat"], **{k: v for k, v in q.items() if k not in ("lat", "lon")}) for q in rows]), source="usgs", freshness=Freshness.DELAYED)
         case "hazards_events":
             rows = await world.natural_events()
-            return envelope(collection([point(e["lon"], e["lat"], **{k: v for k, v in e.items() if k not in ("lat", "lon")}) for e in rows]), source="eonet", freshness=Freshness.LIVE)
+            return envelope(collection([point(e["lon"], e["lat"], **{k: v for k, v in e.items() if k not in ("lat", "lon")}) for e in rows]), source="eonet", freshness=Freshness.DELAYED)
         case "hazards_storms":
             rows = await world.tropical_storms()
-            return envelope(collection([point(s["lon"], s["lat"], **{k: v for k, v in s.items() if k not in ("lat", "lon")}) for s in rows if s["lon"] is not None]), source="nhc", freshness=Freshness.LIVE, note=None if rows else "No active storms in the NHC basins.")
+            return envelope(collection([point(s["lon"], s["lat"], **{k: v for k, v in s.items() if k not in ("lat", "lon")}) for s in rows if s["lon"] is not None]), source="nhc", freshness=Freshness.DELAYED, note=None if rows else "No active storms in the NHC basins.")
         case "agriculture":
             feats = [point(r["lon"], r["lat"], name=r["region"], commodity=c["commodity"], level=r["risk"]["level"], drivers="; ".join(r["risk"]["drivers"]))
                      for c in world.LATEST_RISK.values() for r in c["regions"]]
@@ -98,7 +98,7 @@ async def layer(layer: str, west: float = Query(-180, ge=-180, le=180), south: f
         case "geopolitics":
             rows, failed = await _events()
             feats = [point(e["lon"], e["lat"], **{k: v for k, v in e.items() if k not in ("lat", "lon")}) for e in rows if e.get("lat") is not None]
-            return envelope(collection(feats), source=["federalregister", "gdelt"], freshness=Freshness.LIVE, note=(f"Unavailable: {', '.join(failed)}. " if failed else "") + "Pins mark places named in a headline.")
+            return envelope(collection(feats), source=["federalregister", "gdelt"], freshness=Freshness.DELAYED, note=(f"Unavailable: {', '.join(failed)}. " if failed else "") + "Pins mark places named in a headline.")
         case "chokepoints":
             rows = await world.chokepoints_ready()
             return envelope(collection([point(c["lon"], c["lat"], **{k: v for k, v in c.items() if k not in ("lat", "lon", "history") and not k.startswith("_")}) for c in rows]), source="portwatch", freshness=Freshness.HISTORICAL)
@@ -151,7 +151,7 @@ async def weather_forecast(lat: float = Query(ge=-90, le=90), lon: float = Query
 
 @router.get("/hazards/us-alerts")
 async def us_alerts():
-    return envelope(await world.nws_alerts(), source="nws", freshness=Freshness.LIVE)
+    return envelope(await world.nws_alerts(), source="nws", freshness=Freshness.DELAYED)
 
 
 @router.get("/aviation/airports")
@@ -185,7 +185,7 @@ async def geo_events():
     rows, failed = await _events()
     tiers = {"official": 0, "automated": 1}
     rows.sort(key=lambda e: (tiers.get(e["tier"], 2), str(e.get("time"))), reverse=False)
-    return envelope({"events": rows, "unavailable": failed}, source=["federalregister", "gdelt"], freshness=Freshness.LIVE,
+    return envelope({"events": rows, "unavailable": failed}, source=["federalregister", "gdelt"], freshness=Freshness.DELAYED,
                     note="Official = published by a government source. Automated = machine-collected news, unverified.")
 
 
@@ -213,7 +213,7 @@ async def calendar_view():
 async def news_feed(tier: str | None = Query(None, pattern="^(official|media)$"), q: str | None = Query(None, max_length=60), limit: int = Query(60, ge=1, le=200)):
     refreshed = await news.refresh()
     rows = news.latest(limit, tier, q)
-    return envelope(rows, source="rss", freshness=Freshness.LIVE, note=f"Feeds unavailable: {', '.join(refreshed['failed'])}" if refreshed["failed"] else None)
+    return envelope(rows, source="rss", freshness=Freshness.DELAYED, note=f"Feeds unavailable: {', '.join(refreshed['failed'])}" if refreshed["failed"] else None)
 
 
 # -- Crypto -----------------------------------------------------------------------------------------------
@@ -233,7 +233,7 @@ async def crypto_live():
 @router.get("/crypto/networks")
 async def crypto_networks():
     btc, eth = await asyncio.gather(crypto.bitcoin_network(), crypto.ethereum_network(), return_exceptions=True)
-    return envelope({"bitcoin": None if isinstance(btc, Exception) else {k: v for k, v in btc.items() if not k.startswith("_")}, "ethereum": None if isinstance(eth, Exception) else eth}, source=["mempool", "ethrpc"], freshness=Freshness.LIVE)
+    return envelope({"bitcoin": None if isinstance(btc, Exception) else {k: v for k, v in btc.items() if not k.startswith("_")}, "ethereum": None if isinstance(eth, Exception) else eth}, source=["mempool", "ethrpc"], freshness=Freshness.DELAYED)
 
 
 @router.get("/crypto/defi")

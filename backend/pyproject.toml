@@ -1,6 +1,6 @@
 [project]
 name = "atlas-terminal"
-version = "2.0.0"
+version = "3.0.0"
 description = "Local-first financial and global intelligence terminal"
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -20,6 +20,7 @@ dependencies = [
   "pillow>=10.4",
   "orjson>=3.13.0",
   "xlrd>=2.0.2",
+  "alembic>=1.20.1",
 ]
 
 [dependency-groups]

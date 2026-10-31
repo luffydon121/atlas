@@ -135,3 +135,34 @@ _SOURCES = [
 ]
 
 REGISTRY: dict[str, Source] = {s.id: s for s in _SOURCES}
+
+# Plain summaries for this app's use. The provider's own terms are what apply.
+_PERSONAL = "Personal use. Do not republish."
+_PUBLIC = "Public data. Attribute the source."
+_NONCOMMERCIAL = "Non-commercial use with attribution."
+REDISTRIBUTION = {
+    "yahoo": _PERSONAL, "coingecko": "Attribution required. Limits apply to the free plan.", "binance": "Display of market data; check Binance terms before republishing.",
+    "openmeteo": _NONCOMMERCIAL, "openmeteo_archive": _NONCOMMERCIAL, "opensky": "Non-commercial research use. Ask OpenSky before public display.", "rss": "Headlines and links only.",
+    "gdelt": "Free with citation.", "calendars": "Dates only.", "defillama": "Free with attribution.", "feargreed": "Attribution required.", "ollama": "Runs locally.",
+}
+_REFRESH = {"yahoo": 180, "binance": 30, "rss": 900, "gdelt": 1800, "openmeteo": 3600, "openmeteo_archive": 86400, "usgs": 600, "eonet": 1800, "nws": 600, "nhc": 1800, "opensky": 300, "portwatch": 43200, "coingecko": 180, "mempool": 300,
+            "ethrpc": 300, "defillama": 3600, "sec": 86400, "bls": 43200, "treasury": 21600, "worldbank": 86400, "rba": 43200, "ecb": 43200, "eurostat": 43200, "abs": 43200, "oecd": 86400, "eia": 43200, "federalregister": 21600, "calendars": 86400,
+            "frankfurter": 21600, "wikimedia": 43200, "feargreed": 3600, "earthsearch": 3600, "cdse": 3600}
+_TIERS = ["low", "medium", "high"]
+_BASE = {"official": 2, "local": 2, "community": 1, "mixed": 1, "automated": 0}
+
+
+def redistribution(source_id: str) -> str:
+    return REDISTRIBUTION.get(source_id, _PUBLIC)
+
+
+def expected_seconds(source_id: str) -> int | None:
+    return _REFRESH.get(source_id)
+
+
+def reliability(spec: Source, success_rate: float | None) -> str:
+    """Tier from the kind of source, lowered one step if under 90% of recent fetches succeed."""
+    level = _BASE.get(spec.quality, 1)
+    if success_rate is not None and success_rate < 0.9:
+        level = max(level - 1, 0)
+    return _TIERS[level]

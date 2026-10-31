@@ -11,12 +11,12 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
     create_engine,
     event,
-    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
@@ -67,6 +67,7 @@ class Observation(Base):
     __table_args__ = (
         UniqueConstraint("series_id", "period", "value"),
         Index("ix_obs_series_period", "series_id", "period"),
+        Index("ix_obs_first_seen", "first_seen"),
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     series_id: Mapped[str] = mapped_column(String(120))
@@ -177,6 +178,7 @@ class Document(Base):
 
 class SatelliteMeasurement(Base):
     __tablename__ = "satellite_measurements"
+    __table_args__ = (Index("ix_sat_scene", "aoi", "index_name", "scene_id"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     aoi: Mapped[str] = mapped_column(String(80), index=True)
     index_name: Mapped[str] = mapped_column(String(10))
@@ -185,6 +187,75 @@ class SatelliteMeasurement(Base):
     mean: Mapped[float] = mapped_column(Float)
     valid_fraction: Mapped[float] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class JobRun(Base):
+    __tablename__ = "job_runs"
+    __table_args__ = (Index("ix_job_runs_job_started", "job", "started_at"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job: Mapped[str] = mapped_column(String(60))
+    status: Mapped[str] = mapped_column(String(16))
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    attempts: Mapped[int] = mapped_column(Integer, default=1)
+    error: Mapped[str | None] = mapped_column(Text)
+
+
+class IntelEvent(Base):
+    """A real-world event normalised from a source feed. Payload keeps the source's own fields."""
+
+    __tablename__ = "intel_events"
+    __table_args__ = (Index("ix_intel_events_observed", "observed_at"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(200), unique=True)
+    category: Mapped[str] = mapped_column(String(40), index=True)
+    title: Mapped[str] = mapped_column(Text)
+    severity: Mapped[str] = mapped_column(String(12))
+    verification: Mapped[str] = mapped_column(String(12))
+    region: Mapped[str | None] = mapped_column(String(120))
+    lat: Mapped[float | None] = mapped_column(Float)
+    lon: Mapped[float | None] = mapped_column(Float)
+    source: Mapped[str] = mapped_column(String(40))
+    url: Mapped[str | None] = mapped_column(String(1000))
+    observed_at: Mapped[datetime] = mapped_column(DateTime)
+    first_seen: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    payload: Mapped[str] = mapped_column(Text, default="{}")
+
+
+class MonitoringArea(Base):
+    __tablename__ = "monitoring_areas"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    tracker: Mapped[str] = mapped_column(String(30))
+    index_name: Mapped[str] = mapped_column(String(10))
+    polygon: Mapped[str] = mapped_column(Text)
+    frequency_days: Mapped[int] = mapped_column(Integer, default=7)
+    max_cloud: Mapped[float] = mapped_column(Float, default=15)
+    alert_pct: Mapped[float | None] = mapped_column(Float)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_scene: Mapped[str | None] = mapped_column(String(120))
+    last_checked: Mapped[datetime | None] = mapped_column(DateTime)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Briefing(Base):
+    __tablename__ = "briefings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20), index=True)
+    subject: Mapped[str | None] = mapped_column(String(80))
+    period_start: Mapped[datetime] = mapped_column(DateTime)
+    period_end: Mapped[datetime] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    markdown: Mapped[str] = mapped_column(Text)
+
+
+class DocVector(Base):
+    __tablename__ = "doc_vectors"
+    chunk_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    model: Mapped[str] = mapped_column(String(80), primary_key=True)
+    vector: Mapped[bytes] = mapped_column(LargeBinary)
 
 
 _engine = None
@@ -206,17 +277,12 @@ def _build_engine(url: str):
 
 
 def init_db(url: str | None = None) -> None:
+    from atlas.core import migrate
+
     global _engine, _session_factory
     _engine = _build_engine(url or get_settings().database_url)
     _session_factory = sessionmaker(_engine, expire_on_commit=False)
-    Base.metadata.create_all(_engine)
-    with _engine.begin() as conn:
-        conn.execute(
-            text(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS doc_chunks "
-                "USING fts5(document_id UNINDEXED, page UNINDEXED, body, tokenize='porter')"
-            )
-        )
+    migrate.upgrade(url or get_settings().database_url)
     with session_scope() as db:
         if not db.query(Watchlist).first():
             wl = Watchlist(name="Core")

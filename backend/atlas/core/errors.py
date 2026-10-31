@@ -7,5 +7,9 @@ class SourceUnavailable(Exception):
         self.reason = reason
 
 
+class NotCovered(SourceUnavailable):
+    """The provider works, but this item is outside what it covers."""
+
+
 class SourceNotConfigured(SourceUnavailable):
     """A provider needs an optional free key or contact that has not been set."""
