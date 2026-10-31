@@ -26,6 +26,10 @@
 
 ## Fixed
 
+- Saving data could freeze the whole app. Commits ran after the response while a write held the event loop. This dated from V1.
+- In-memory caches are now capped, and whole filings are no longer held in memory.
+- The event feed answers within about 6 seconds even if a source is slow.
+- The public demo no longer shows tools that visitors cannot use.
 - Yahoo `range=max` returns monthly data, so event studies request explicit dates.
 - Crop alerts now respect growing seasons, and prescribed burns no longer count as disasters.
 - ECB inflation ended in December 2025. Euro area comparisons now use Eurostat.

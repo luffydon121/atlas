@@ -4,13 +4,14 @@ Run on 1 November 2026, on an Apple Silicon Mac, on the `v3-development` branch.
 
 | Check | Result |
 | --- | --- |
-| Backend tests (`uv run pytest`) | 180 passed |
+| Backend tests (`uv run pytest`) | 184 passed |
 | Live network tests (`uv run pytest -m live`) | 3 passed. One run failed once on a PortWatch timeout, then passed. Treat as flaky |
 | Ruff | Clean |
 | TypeScript | Clean |
 | ESLint | No errors |
 | Production build | Compiled |
-| Browser tests on the production build | 132 passed |
+| Browser tests on a clean production build | 132 passed |
+| Demo build browser tests | 18 passed |
 | `pip-audit` and `npm audit --omit=dev` | No known vulnerabilities |
 | Migration on a copy of real data | Row counts identical in 12 tables, 0.31 seconds, schema matches models |
 
@@ -30,7 +31,7 @@ Live checks confirmed event detection, 6 hurricane analogues across 9 assets, BI
 
 ## Not run
 
-- Docker image build, because Docker is not installed.
+- Docker image build, because Docker is not installed. Its steps were followed by hand from a clean clone, in read-only mode with an empty database.
 - `--lan` over a real network.
 - Real Ollama models.
 - 13F positions and Form 4 parsing on real filings, which need an SEC contact.

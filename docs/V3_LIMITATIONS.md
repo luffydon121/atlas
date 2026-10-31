@@ -49,6 +49,7 @@ These add to `LIMITATIONS.md`.
 
 ## Not verified
 
-- Docker was not installed, so the `Dockerfile` has not been built on V3. The package was built and contains the migrations.
+- Docker was not installed, so the `Dockerfile` itself has not been built here. Its steps were rehearsed by hand.
+- In that rehearsal the demo used about 350 MB when idle and up to about 520 MB under heavy use on macOS. Linux may differ, and a 512 MB plan could restart under load.
 - `--lan` mode has not been tested over a real network.
 - Tests use emulated phones, not physical devices. Firefox could not start in the test environment.
