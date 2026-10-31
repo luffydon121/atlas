@@ -3,22 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { send, useApi } from "@/lib/api";
 import { ago } from "@/lib/format";
-import { Skeleton } from "./ui";
+import { Markdown, Skeleton } from "./ui";
 
 type Citation = { n: number; title: string; source: string; as_of: string | null; url: string | null };
 type Answer = { answer: string; mode: string; model: string | null; warning: string | null; citations: Citation[]; tools: string[]; missing: string[] };
 type Turn = { q: string; a?: Answer; error?: string };
 
 const EXAMPLES = ["What is happening in the global oil market?", "Compare Apple and Microsoft financial performance.", "Show major drought risks affecting coffee production.", "Summarize the latest available economic indicators for Australia."];
-
-function Markdown({ text }: { text: string }) {
-  return <div className="answer">{text.split("\n").map((line, i) => {
-    const bold = line.match(/^\*\*(.+?)\*\*(.*)$/);
-    if (bold) return <p key={i} style={{ marginTop: 8 }}><b>{bold[1]}</b> <span className="muted">{bold[2]}</span></p>;
-    if (line.startsWith("- ")) return <li key={i}>{line.slice(2)}</li>;
-    return line ? <p key={i}>{line}</p> : null;
-  })}</div>;
-}
 
 export function Assistant({ onClose, initial }: { onClose: () => void; initial?: string | null }) {
   const [turns, setTurns] = useState<Turn[]>([]);

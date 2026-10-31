@@ -2,7 +2,7 @@
 
 A local-first financial and global intelligence app. It runs on your Mac, costs nothing to run, and labels every number with where it came from and how fresh it is.
 
-Version 2.1 fits phones, tablets and large monitors, and adds phone access over Wi-Fi. Version 2 added an all-new interface with light and dark themes, a daily Today briefing, faster data, a calendar and more sources.
+Version 3 adds the Impact Engine, which links real events to possible market exposure and measures what happened around past events. It also adds briefings, a Data Quality Center, satellite monitoring areas, institutional holdings and an event study lab. Version 2.1 fits phones, tablets and large monitors, and adds phone access over Wi-Fi. Version 2 added an all-new interface with light and dark themes, a daily Today briefing, faster data, a calendar and more sources.
 
 ATLAS is a research tool. It is not investment advice and it never places real orders.
 
@@ -42,10 +42,11 @@ ATLAS works with no keys. Edit `.env` and restart to unlock more.
 
 | Setting | Unlocks | Get it |
 | --- | --- | --- |
-| `ATLAS_SEC_CONTACT` | Every SEC filer (not only 43 large caps) and parsed Form 4 insider trades | Your own name and email. SEC asks automated clients to identify themselves |
+| `ATLAS_SEC_CONTACT` | Every SEC filer (not only 43 large caps), parsed Form 4 insider trades and 13F positions | Your own name and email. SEC asks automated clients to identify themselves |
 | `ATLAS_FRED_API_KEY` | US GDP, retail sales, housing starts, industrial production | [Free key](https://fred.stlouisfed.org/docs/api/api_key.html) |
 | `ATLAS_BLS_API_KEY` | Higher BLS daily allowance | [Free key](https://www.bls.gov/developers/) |
 | `ATLAS_OLLAMA_MODEL` | Written assistant answers from a local model | Install [Ollama](https://ollama.com), then run `ollama pull llama3.2` |
+| `ATLAS_OLLAMA_EMBED_MODEL` | Semantic document search | Run `ollama pull nomic-embed-text` |
 | `ATLAS_MACOS_NOTIFICATIONS=true` | Alert banners in macOS | Nothing else needed |
 
 Without Ollama the assistant still works. It shows the retrieved evidence with citations instead of writing prose.
@@ -85,6 +86,12 @@ cd backend && uv run pytest -m live
 
 ## Documentation
 
+- [V3 architecture and deployment](docs/V3_ARCHITECTURE.md)
+- [V3 feature matrix](docs/V3_FEATURE_MATRIX.md)
+- [V3 changelog](docs/V3_CHANGELOG.md)
+- [V3 limitations](docs/V3_LIMITATIONS.md)
+- [V3 test results](docs/V3_TEST_RESULTS.md)
+- [Data sources and licences](docs/V3_SOURCES.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Feature matrix](docs/FEATURE_MATRIX.md): what is built, partial and missing
 - [Known limitations](docs/LIMITATIONS.md)

@@ -120,7 +120,7 @@ function Offline() {
 
 function TabBar({ path, onSearch }: { path: string; onSearch: () => void }) {
   const group = NAV.find((n) => n.href === path)?.group;
-  const tabs = [{ label: "Today", href: "/", on: path === "/" }, { label: "Markets", href: "/markets", on: group === "Markets" }, { label: "World", href: "/map", on: group === "World" }, { label: "Research", href: "/portfolio", on: group === "Research" || group === "Economy" }];
+  const tabs = [{ label: "Today", href: "/", on: path === "/" }, { label: "Markets", href: "/markets", on: group === "Markets" }, { label: "World", href: "/map", on: group === "World" }, { label: "Intel", href: "/impact", on: group === "Intelligence" || group === "Research" || group === "Economy" }];
   return (
     <nav className="tabbar" aria-label="Main">
       {tabs.map((t) => <Link key={t.href} href={t.href} className={t.on ? "on" : ""}>{t.label}</Link>)}
@@ -187,7 +187,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
               <Link key={g} href={NAV.find((n) => n.group === g)!.href} className={`gnav-link ${page?.group === g ? "on" : ""}`} onMouseEnter={() => hover(g)} onFocus={() => hover(g)}>{g}</Link>
             ))}
             {menu ? <div style={{ margin: "10px 0" }}><div className="muted" style={{ fontSize: 12 }}>System</div>{NAV.filter((n) => n.group === "System").map((n) => <Link key={n.href} href={n.href} style={{ display: "block", padding: "5px 0", fontSize: 19, fontWeight: 600 }}>{n.label}</Link>)}</div>
-              : <Link href="/sources" className={`gnav-link ${page?.group === "System" ? "on" : ""}`} onMouseEnter={() => hover("System")}>System</Link>}
+              : <Link href="/quality" className={`gnav-link ${page?.group === "System" ? "on" : ""}`} onMouseEnter={() => hover("System")}>System</Link>}
           </nav>
           <div className="gnav-right">
             <button className="icon-btn" aria-label="Search" onClick={() => setSearch(true)}>{Icon.search}</button>

@@ -21,7 +21,7 @@ SEVERITY = ["info", "watch", "elevated", "severe"]
 CATEGORIES = {"extreme_weather": "Extreme weather", "natural_disaster": "Natural disaster", "wildfire": "Wildfire", "shipping": "Shipping", "agriculture": "Crop risk", "central_bank": "Central bank", "inflation": "Inflation",
               "regulatory": "Regulation", "geopolitical": "Geopolitics", "energy": "Energy", "industrial": "Industry", "earnings": "Earnings"}
 NEAR_KM = 400
-OBSERVED = "Observed price moves since the event. They may have other causes."
+OBSERVED = "Observed price moves since this reading. An ongoing condition may have started earlier, and moves may have other causes."
 HYPOTHESIS = "Exposures are hypotheses from documented geography and business lines, not forecasts."
 
 
@@ -104,7 +104,7 @@ def from_chokepoints(rows: list[dict]) -> list[dict]:
     out = []
     for c in rows:
         if c.get("disrupted"):
-            out.append(event(f"portwatch:{c['id']}:{c['latest_date'][:7]}", "shipping", f"{c['name']} transits {c['pct_vs_baseline']:+.0f}% against a year ago", chokepoint_severity(c["pct_vs_baseline"]), "derived", "portwatch", _time(c["latest_date"]),
+            out.append(event(f"portwatch:{c['id']}:{c['latest_date'][:7]}", "shipping", f"{c['name']} transits {c['pct_vs_baseline']:+.0f}% against the prior year's average", chokepoint_severity(c["pct_vs_baseline"]), "derived", "portwatch", _time(c["latest_date"]),
                              c["lat"], c["lon"], url="https://portwatch.imf.org", chokepoint=c["id"], transits_7d=c["transits_7d_avg"], baseline=c["baseline_avg"], z=c["z"]))
     return out
 

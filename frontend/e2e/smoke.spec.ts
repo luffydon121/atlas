@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-const PAGES = ["/", "/workspace", "/calendar", "/markets", "/chart?s=AAPL", "/company?t=AAPL", "/economy", "/crypto", "/map", "/satellite", "/weather", "/transport", "/geopolitics", "/alternative", "/quant", "/portfolio", "/alerts", "/sources", "/settings"];
+const PAGES = ["/", "/impact", "/briefing", "/holdings", "/events", "/quality", "/workspace", "/calendar", "/markets", "/chart?s=AAPL", "/company?t=AAPL", "/economy", "/crypto", "/map", "/satellite", "/weather", "/transport", "/geopolitics", "/alternative", "/quant", "/portfolio", "/alerts", "/sources", "/settings"];
 
 for (const path of PAGES) {
   test(`loads ${path} without page errors`, async ({ page }) => {

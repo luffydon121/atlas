@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-const PAGES = ["/", "/markets", "/chart?s=AAPL", "/company?t=AAPL", "/company?t=BHP.AX", "/crypto", "/workspace", "/economy", "/calendar", "/map", "/satellite", "/weather", "/transport", "/geopolitics", "/alternative", "/quant", "/portfolio", "/alerts", "/sources", "/settings"];
+const PAGES = ["/", "/impact", "/briefing", "/holdings", "/events", "/quality", "/markets", "/chart?s=AAPL", "/company?t=AAPL", "/company?t=BHP.AX", "/crypto", "/workspace", "/economy", "/calendar", "/map", "/satellite", "/weather", "/transport", "/geopolitics", "/alternative", "/quant", "/portfolio", "/alerts", "/sources", "/settings"];
 const SIZES = { "small phone": [320, 640], phone: [390, 844], "phone landscape": [844, 390], tablet: [768, 1024], "tablet landscape": [1024, 768], laptop: [1280, 800], desktop: [1920, 1080], ultrawide: [2560, 1440] };
 
 for (const [name, [width, height]] of Object.entries(SIZES)) {

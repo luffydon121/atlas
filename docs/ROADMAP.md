@@ -1,5 +1,18 @@
 # Roadmap
 
+## Next for V3
+
+1. Decide how the public demo handles personal-use data such as Yahoo.
+2. Add your SEC contact and verify 13F positions on real filings.
+3. Build the Docker image and test the demo in it.
+4. Run the assistant and embeddings with a real Ollama model.
+5. Add a visual relationship graph and a multi-asset page.
+6. Add an event timeline to map playback.
+7. Add ABS, ONS and Census release calendars.
+8. Have someone with domain knowledge review the exposure rules.
+
+## Earlier ideas
+
 ## Next
 
 1. Run the assistant with a real Ollama model and tune the prompt.

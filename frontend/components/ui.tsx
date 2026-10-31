@@ -33,7 +33,7 @@ export function Panel({ title, meta, actions, children, className, style, csv }:
         <Fresh meta={meta} />
         <span style={{ marginLeft: "auto" }} className="row">{actions}{csv && <button className="btn" onClick={download}>Export</button>}</span>
       </header>
-      <div className="panel-body" ref={body}>{children}</div>
+      <div className="panel-body" ref={body} tabIndex={csv || style?.maxHeight ? 0 : undefined}>{children}</div>
       {meta?.note && <footer className="panel-foot">{meta.note}</footer>}
     </section>
   );
@@ -97,6 +97,29 @@ export function Flash({ value, children }: { value: number | null | undefined; c
   const [state, setState] = useState({ last: value, cls: "", tick: 0 });
   if (value !== state.last) setState({ last: value, cls: value != null && state.last != null ? (value > state.last ? "flash-up" : "flash-down") : "", tick: state.tick + 1 });
   return <span key={state.tick} className={state.cls} style={{ borderRadius: 6 }}>{children}</span>;
+}
+
+export function Markdown({ text }: { text: string }) {
+  const blocks: ReactNode[] = [];
+  let items: string[] = [];
+  const flush = (key: number) => {
+    if (items.length) blocks.push(<ul key={`list-${key}`} style={{ margin: "0 0 6px", padding: 0 }}>{items.map((item, i) => <li key={i}>{item}</li>)}</ul>);
+    items = [];
+  };
+  text.split("\n").forEach((line, i) => {
+    if (line.startsWith("- ")) {
+      items.push(line.slice(2));
+      return;
+    }
+    flush(i);
+    const bold = line.match(/^\*\*(.+?)\*\*(.*)$/);
+    if (line.startsWith("# ")) blocks.push(<h2 key={i} style={{ fontSize: 26, fontWeight: 600, letterSpacing: "-0.02em", margin: "0 0 8px" }}>{line.slice(2)}</h2>);
+    else if (line.startsWith("## ")) blocks.push(<h3 key={i} style={{ fontSize: 17, fontWeight: 600, margin: "18px 0 6px" }}>{line.slice(3)}</h3>);
+    else if (bold) blocks.push(<p key={i} style={{ marginTop: 8 }}><b>{bold[1]}</b> <span className="muted">{bold[2]}</span></p>);
+    else if (line) blocks.push(<p key={i}>{line}</p>);
+  });
+  flush(-1);
+  return <div className="answer">{blocks}</div>;
 }
 
 export const Icon = {

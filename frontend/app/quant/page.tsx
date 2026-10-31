@@ -23,7 +23,8 @@ const HEAD = <thead><tr><th>Series</th><th>Total</th><th>CAGR</th><th>Vol</th><t
 
 export default function Quant() {
   const strategies = useEnvelope<Record<string, Record<string, number[]>>>("/api/quant/strategies");
-  const [form, setForm] = useState({ symbol: "SPY", strategy: "sma_cross", cost_bps: 10, walk: true, total: true });
+  const [form, setForm] = useState({ symbol: "SPY", strategy: "sma_cross", cost_bps: 10, slippage_bps: 5, walk: true, total: true });
+  const [cmp, setCmp] = useState<Envelope<(Metrics & { strategy: string; p_value: number | null; survives_correction: boolean })[]> | null>(null);
   const [params, setParams] = useState<Record<string, number>>({ fast: 50, slow: 200 });
   const [res, setRes] = useState<Envelope<Result> | null>(null);
   const [mc, setMc] = useState<Envelope<Mc> | null>(null);
@@ -35,7 +36,7 @@ export default function Quant() {
   const [busy, setBusy] = useState(false);
   const guard = async <T,>(fn: () => Promise<T>) => { setBusy(true); setError(null); try { return await fn(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } };
   const run = () => guard(async () => {
-    setRes(await send("/api/quant/backtest", "POST", { symbol: form.symbol, strategy: form.strategy, params, cost_bps: form.cost_bps, walk_forward: form.walk, total_return: form.total }));
+    setRes(await send("/api/quant/backtest", "POST", { symbol: form.symbol, strategy: form.strategy, params, cost_bps: form.cost_bps, slippage_bps: form.slippage_bps, walk_forward: form.walk, total_return: form.total }));
     setMc(await send("/api/quant/montecarlo", "POST", { symbol: form.symbol }));
   });
   const r = res?.data;
@@ -47,11 +48,14 @@ export default function Quant() {
         <select className="input" aria-label="Strategy" value={form.strategy} onChange={(e) => { const s = e.target.value; setForm({ ...form, strategy: s }); setParams(Object.fromEntries(Object.entries(strategies.data?.data[s] ?? {}).map(([k, v]) => [k, v[v.length - 1]]))); }}>{Object.keys(strategies.data?.data ?? {}).map((s) => <option key={s} value={s}>{NAMES[s] ?? s}</option>)}</select>
         {Object.keys(grid).map((k) => <label key={k} className="row muted">{k}<input type="number" className="input mono" style={{ width: 64 }} value={params[k] ?? ""} onChange={(e) => setParams({ ...params, [k]: +e.target.value })} /></label>)}
         <label className="row muted">Cost bps<input type="number" className="input mono" style={{ width: 60 }} value={form.cost_bps} onChange={(e) => setForm({ ...form, cost_bps: +e.target.value })} /></label>
+        <label className="row muted">Slippage bps<input type="number" className="input mono" style={{ width: 60 }} value={form.slippage_bps} onChange={(e) => setForm({ ...form, slippage_bps: +e.target.value })} /></label>
         <label className="row muted"><input type="checkbox" className="switch" checked={form.total} onChange={(e) => setForm({ ...form, total: e.target.checked })} />Dividends</label>
         <label className="row muted"><input type="checkbox" className="switch" checked={form.walk} onChange={(e) => setForm({ ...form, walk: e.target.checked })} />Walk-forward</label>
         <button className="btn on" disabled={busy} onClick={run}>{busy ? "Running…" : "Run backtest"}</button>
+        <button className="btn" disabled={busy} onClick={() => guard(async () => setCmp(await send("/api/quant/compare", "POST", { symbol: form.symbol, cost_bps: form.cost_bps + form.slippage_bps })))}>Compare strategies</button>
         <button className="btn" disabled={busy} onClick={() => guard(async () => setFac(await send(`/api/quant/factors/${encodeURIComponent(form.symbol)}`, "GET")))}>Factor exposure</button>
       </div>{error && <div className="notice bad">{error}</div>}</section>
+      {cmp && <Panel title="Strategy comparison" meta={cmp.meta}><table className="t sticky"><thead><tr><th>Strategy</th><th>CAGR</th><th>Sharpe</th><th>Max DD</th><th>p</th><th>Survives correction</th></tr></thead><tbody>{cmp.data.map((s) => <tr key={s.strategy}><td>{NAMES[s.strategy] ?? s.strategy}</td><td>{ratioPct(s.cagr, 1, true)}</td><td>{num(s.sharpe)}</td><td>{ratioPct(s.max_drawdown, 1)}</td><td>{num(s.p_value, 3)}</td><td>{s.survives_correction ? "Yes" : "No"}</td></tr>)}</tbody></table></Panel>}
       {r && <>
         <Panel title="Results" meta={res?.meta}>
           <table className="t mono">{HEAD}<tbody><MetricRow label={`${NAMES[r.strategy] ?? r.strategy} (in-sample)`} m={r.metrics} /><MetricRow label="Buy and hold" m={r.benchmark} />{r.walk_forward && <MetricRow label="Walk-forward, out-of-sample" m={r.walk_forward.out_of_sample} />}{r.walk_forward && <MetricRow label="Buy and hold, same period" m={r.walk_forward.benchmark} />}</tbody></table>
