@@ -1,9 +1,11 @@
 """Prices from Yahoo's public chart endpoint. Stored locally so history survives outages."""
 
 import asyncio
+import time
 from datetime import UTC, datetime
 from urllib.parse import quote
 
+import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.dialects.sqlite import insert
 
@@ -103,6 +105,20 @@ async def chart(symbol: str, range_: str = "1y", interval: str = "1d", ttl: int 
     parsed["_fetched"] = got.fetched_at
     parsed["_stale"] = got.stale
     return parsed
+
+
+async def daily_history(symbol: str, start: str = "2000-01-01") -> pd.Series:
+    """True daily closes, dividend-adjusted where available. Yahoo's range=max returns monthly bars."""
+    since = int(datetime.fromisoformat(start).replace(tzinfo=UTC).timestamp())
+    params = {"period1": since, "period2": int(time.time()) // 86400 * 86400, "interval": "1d", "events": "div,split"}
+    async with _POOL:
+        got = await get_fetcher().get("yahoo", CHART + quote(symbol, safe=""), params=params, headers=HEADERS, ttl=6 * 3600)
+    try:
+        bars = parse_chart(got.json())["bars"]
+    except ValueError as exc:
+        raise SourceUnavailable("yahoo", f"{symbol}: {exc}") from exc
+    series = pd.Series({pd.Timestamp(b["time"], unit="s").normalize(): b.get("adjclose", b["close"]) for b in bars}, dtype=float)
+    return series[~series.index.duplicated(keep="last")].sort_index().dropna()
 
 
 def _classify(_symbol_type: str | None) -> Freshness:

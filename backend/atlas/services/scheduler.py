@@ -9,7 +9,7 @@ from atlas.connectors import econ, news, world
 from atlas.core.errors import SourceUnavailable
 from atlas.core.fetcher import prune_cache
 from atlas.core.reference import WEATHER_REGIONS
-from atlas.services import alerts, briefing, jobs, maintenance
+from atlas.services import alerts, briefing, impact, jobs, maintenance
 
 log = logging.getLogger("atlas.scheduler")
 
@@ -51,6 +51,7 @@ def job_list() -> list[jobs.Job]:
         jobs.Job("market", _market, 120, 60, 0, "yahoo", "Market quotes and Today"),
         jobs.Job("news", news.refresh, 900, 90, 1, "rss", "News feeds"),
         jobs.Job("alerts", alerts.evaluate_all, settings.alert_interval_seconds, 240, 0, None, "Alert rules"),
+        jobs.Job("impact", impact.collect, 900, 120, 1, None, "Event detection"),
         jobs.Job("universe", _universe, 3600, 180, 1, "yahoo", "Screener universe"),
         jobs.Job("economy", _refresh_econ, 6 * 3600, 300, 1, None, "Economic series"),
         jobs.Job("shipping", _shipping, 12 * 3600, 240, 1, "portwatch", "Chokepoint transits"),

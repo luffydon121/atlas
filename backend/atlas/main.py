@@ -10,7 +10,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, ORJSONResponse
 
-from atlas.api import company, econ, market, research, system, world
+from atlas.api import company, econ, impact, market, research, system, world
 from atlas.config import get_settings
 from atlas.core.errors import NotCovered, SourceNotConfigured, SourceUnavailable
 from atlas.core.fetcher import get_fetcher, set_fetcher
@@ -58,5 +58,5 @@ async def public_read_only(request: Request, call_next):
     return await call_next(request)
 
 
-for module in (market, company, econ, world, research, system):
+for module in (market, company, econ, world, research, system, impact):
     app.include_router(module.router)
