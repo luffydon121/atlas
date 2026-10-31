@@ -1,4 +1,5 @@
 import asyncio
+import gc
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -11,6 +12,7 @@ from atlas.core.memo import memo
 from atlas.services import valuation
 
 router = APIRouter(prefix="/api/company", tags=["company"])
+_PARSING = asyncio.Semaphore(2)
 
 
 def _small(sub: dict) -> dict:
@@ -21,10 +23,15 @@ def _small(sub: dict) -> dict:
 @memo(900, maxsize=12)
 async def _load(ticker: str) -> dict:
     info = await sec.resolve(ticker)
-    facts_got, sub_got = await asyncio.gather(sec.company_facts(info["cik"]), sec.submissions(info["cik"]))
-    facts, sub = facts_got.json(), sub_got.json()
-    annual = sec.build_statements(facts)
-    return {"info": info, "shares": sec.shares_outstanding(facts), "sub": _small(sub), "annual": annual, "ratios": sec.ratios(annual), "fetched": facts_got.fetched_at, "stale": facts_got.stale}
+    # A filing file parses to tens of megabytes, so only a few are held at once.
+    async with _PARSING:
+        facts_got, sub_got = await asyncio.gather(sec.company_facts(info["cik"]), sec.submissions(info["cik"]))
+        facts, sub = facts_got.json(), sub_got.json()
+        annual = sec.build_statements(facts)
+        result = {"info": info, "shares": sec.shares_outstanding(facts), "sub": _small(sub), "annual": annual, "ratios": sec.ratios(annual), "fetched": facts_got.fetched_at, "stale": facts_got.stale}
+        del facts, sub
+    gc.collect()
+    return result
 
 
 def _multiples(price: float | None, shares: dict | None, annual: list[dict], ratios: list[dict]) -> dict:

@@ -2,7 +2,7 @@
 
 import numpy as np
 import pandas as pd
-from scipy import stats
+from scipy.special import stdtr
 
 
 class StudyError(ValueError):
@@ -52,7 +52,7 @@ def study(prices: pd.Series, dates: list[str], benchmark: pd.Series | None = Non
     t_stat = p_value = None
     if n >= 3 and cars.std(ddof=1) > 0:
         t_stat = float(cars.mean() / (cars.std(ddof=1) / np.sqrt(n)))
-        p_value = float(2 * stats.t.sf(abs(t_stat), n - 1))
+        p_value = float(2 * stdtr(n - 1, -abs(t_stat)))
     paths = np.array([r["path"] for r in rows]) if rows else np.empty((0, 0))
     return {"n": n, "skipped": skipped, "before": before, "after": after, "market_adjusted": benchmark is not None, "mean_car": float(cars.mean()) if n else None, "median_car": float(np.median(cars)) if n else None, "positive": int((cars > 0).sum()),
             "t_stat": t_stat, "p_value": p_value, "events": [{k: v for k, v in r.items() if k != "path"} for r in rows],

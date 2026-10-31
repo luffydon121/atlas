@@ -5,7 +5,7 @@ from itertools import product
 
 import numpy as np
 import pandas as pd
-from scipy.optimize import minimize
+from scipy.special import stdtr
 
 from atlas.services.analytics import TRADING_DAYS, rsi, sma
 
@@ -149,6 +149,8 @@ def monte_carlo(returns: pd.Series, horizon: int = 252, paths: int = 2000, block
 
 def optimise(prices: pd.DataFrame, objective: str = "max_sharpe", rf: float = 0.04, max_weight: float = 1.0) -> dict:
     """Long-only optimiser on historical moments. Expected returns are noisy; treat as exploratory."""
+    from scipy.optimize import minimize
+
     r = prices.pct_change(fill_method=None).dropna()
     if len(r) < 120 or r.shape[1] < 2:
         raise ResearchError("Need at least two assets and 120 overlapping bars.")
@@ -217,14 +219,12 @@ def stress_test(prices: dict[str, pd.Series], weights: dict[str, float]) -> list
 
 def compare_strategies(px: pd.Series, cost_bps: float = 10) -> list[dict]:
     """Each strategy against zero, with a p-value so that many comparisons can be corrected for."""
-    from scipy import stats
-
     rows = []
     for name, (fn, _grid) in STRATEGIES.items():
         net = simulate(px, fn(px), cost_bps)["net"]
         net = net[net.ne(0).cumsum() > 0]
         t = float(net.mean() / (net.std() / np.sqrt(len(net)))) if len(net) > 2 and net.std() > 0 else None
-        rows.append({"strategy": name, **metrics(net), "t_stat": t, "p_value": float(2 * stats.t.sf(abs(t), len(net) - 1)) if t is not None else None})
+        rows.append({"strategy": name, **metrics(net), "t_stat": t, "p_value": float(2 * stdtr(len(net) - 1, -abs(t))) if t is not None else None})
     return rows
 
 
