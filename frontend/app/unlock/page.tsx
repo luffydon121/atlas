@@ -3,7 +3,7 @@ export default async function Unlock({ searchParams }: { searchParams: Promise<{
   return (
     <div className="unlock">
       <h1>ATLAS</h1>
-      <p>Enter the passcode shown on your Mac.</p>
+      <p>Enter your passcode.</p>
       <form method="post" action="/unlock/verify">
         <input className="input" type="password" name="passcode" autoFocus autoComplete="current-password" aria-label="Passcode" required />
         <button className="btn on">Unlock</button>

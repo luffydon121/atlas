@@ -1,5 +1,7 @@
 """Rules for the public demo. Everything is refused unless it is explicitly allowed."""
 
+import hashlib
+import hmac
 import time
 from collections import defaultdict, deque
 
@@ -10,6 +12,13 @@ LIMIT_PER_MINUTE = 120
 ALLOWED = ("/api/health", "/api/search", "/api/market/", "/api/company", "/api/econ/", "/api/news", "/api/today", "/api/calendar", "/api/map/", "/api/weather/", "/api/hazards/", "/api/aviation/", "/api/shipping/", "/api/trade/",
            "/api/geo/", "/api/crypto/", "/api/alt/", "/api/sources", "/api/quality", "/api/impact/", "/api/graph", "/api/briefings/latest")
 _hits: dict[str, deque] = defaultdict(deque)
+
+
+def owner(cookie: str | None, passcode: str) -> bool:
+    """True for the site owner, who unlocked with the passcode. Same token as frontend/lib/access.ts."""
+    if not passcode or not cookie:
+        return False
+    return hmac.compare_digest(cookie, hashlib.sha256(f"atlas:{passcode}".encode()).hexdigest())
 
 
 def client_id(headers, fallback: str) -> str:

@@ -3,7 +3,8 @@ import { accessToken, COOKIE } from "@/lib/access";
 
 export async function proxy(request: NextRequest) {
   const passcode = process.env.ATLAS_PASSCODE;
-  if (!passcode) return NextResponse.next();
+  // On the public site pages stay open; the API itself refuses private calls until unlocked.
+  if (!passcode || process.env.ATLAS_PUBLIC_READ_ONLY === "true") return NextResponse.next();
   if (request.cookies.get(COOKIE)?.value === (await accessToken(passcode))) return NextResponse.next();
   if (request.nextUrl.pathname.startsWith("/api/")) return NextResponse.json({ detail: "Locked" }, { status: 401 });
   return NextResponse.redirect(new URL("/unlock", `http://${request.headers.get("host")}`));

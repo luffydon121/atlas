@@ -51,7 +51,7 @@ async def source_unavailable(_request: Request, exc: SourceUnavailable) -> JSONR
 
 @app.middleware("http")
 async def public_read_only(request: Request, call_next):
-    if get_settings().public_read_only:
+    if get_settings().public_read_only and not public_mode.owner(request.cookies.get("atlas_access"), get_settings().passcode):
         blocked = public_mode.check(request.method, request.url.path, public_mode.client_id(request.headers, request.client.host if request.client else "unknown"))
         if blocked:
             return JSONResponse(status_code=blocked[0], content={"detail": blocked[1]})

@@ -39,3 +39,33 @@ def test_public_mode_rate_limits_each_client():
     assert public_mode.limited("a", 1.0)
     assert not public_mode.limited("b", 1.0)
     assert not public_mode.limited("a", 61.0)
+
+
+def test_owner_needs_the_right_passcode_token():
+    import hashlib
+
+    from atlas.services import public_mode
+    token = hashlib.sha256(b"atlas:secret").hexdigest()
+    assert public_mode.owner(token, "secret")
+    assert not public_mode.owner("wrong", "secret")
+    assert not public_mode.owner(None, "secret")
+    assert not public_mode.owner(token, "")
+
+
+def test_unlocked_owner_passes_the_public_gate(monkeypatch):
+    import hashlib
+
+    from fastapi.testclient import TestClient
+
+    from atlas.config import get_settings
+    from atlas.main import app
+
+    monkeypatch.setattr(get_settings(), "public_read_only", True)
+    monkeypatch.setattr(get_settings(), "passcode", "secret")
+    token = hashlib.sha256(b"atlas:secret").hexdigest()
+    client = TestClient(app, base_url="http://localhost")
+    assert client.get("/api/settings").status_code == 403
+    client.cookies.set("atlas_access", "wrong")
+    assert client.get("/api/settings").status_code == 403
+    client.cookies.set("atlas_access", token)
+    assert client.get("/api/settings").status_code == 200

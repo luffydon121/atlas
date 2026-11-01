@@ -4,7 +4,7 @@ COPY frontend/package*.json ./
 COPY frontend/scripts ./scripts
 RUN npm ci --no-audit --no-fund
 COPY frontend/ ./
-ENV NEXT_TELEMETRY_DISABLED=1 NEXT_PUBLIC_ATLAS_READ_ONLY=true ATLAS_API_URL=http://127.0.0.1:8000
+ENV NEXT_TELEMETRY_DISABLED=1 NEXT_PUBLIC_ATLAS_READ_ONLY=false ATLAS_API_URL=http://127.0.0.1:8000
 RUN npm run build
 
 FROM python:3.12-slim-bookworm
