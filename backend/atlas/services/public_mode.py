@@ -1,16 +1,15 @@
-"""Rules for the public demo. Everything is refused unless it is explicitly allowed."""
+"""Rules for the public site. Anyone can read and calculate; saving needs the passcode."""
 
 import hashlib
 import hmac
 import time
 from collections import defaultdict, deque
 
-READ_ONLY = "This public demo is read-only. Saving, uploads and interactive calculations are disabled."
-PRIVATE = "Personal workspace features are unavailable in the public demo."
+READ_ONLY = "Saving needs the site passcode."
+PRIVATE = "This needs the site passcode."
 TOO_MANY = "Too many requests. Please wait a moment."
 LIMIT_PER_MINUTE = 120
-ALLOWED = ("/api/health", "/api/search", "/api/market/", "/api/company", "/api/econ/", "/api/news", "/api/today", "/api/calendar", "/api/map/", "/api/weather/", "/api/hazards/", "/api/aviation/", "/api/shipping/", "/api/trade/",
-           "/api/geo/", "/api/crypto/", "/api/alt/", "/api/sources", "/api/quality", "/api/impact/", "/api/graph", "/api/briefings/latest")
+CALCULATORS = ("/api/quant/", "/api/company/dcf/run", "/api/ai/ask", "/api/satellite/change")
 _hits: dict[str, deque] = defaultdict(deque)
 
 
@@ -24,10 +23,6 @@ def owner(cookie: str | None, passcode: str) -> bool:
 def client_id(headers, fallback: str) -> str:
     forwarded = headers.get("cf-connecting-ip") or headers.get("x-forwarded-for", "").split(",")[0].strip()
     return forwarded or fallback
-
-
-def _allowed(path: str) -> bool:
-    return any(path == p or path.startswith(p if p.endswith("/") else p + "/") for p in ALLOWED)
 
 
 def limited(client: str, now: float | None = None) -> bool:
@@ -46,10 +41,11 @@ def limited(client: str, now: float | None = None) -> bool:
 def check(method: str, path: str, client: str) -> tuple[int, str] | None:
     if not path.startswith("/api"):
         return None
-    if method not in {"GET", "HEAD", "OPTIONS"}:
+    if method in {"GET", "HEAD", "OPTIONS"}:
+        if path == "/api/settings" or path.startswith("/api/system/"):
+            return 403, PRIVATE
+    elif not path.startswith(CALCULATORS):
         return 403, READ_ONLY
-    if not _allowed(path):
-        return 403, PRIVATE
     if limited(client):
         return 429, TOO_MANY
     return None
